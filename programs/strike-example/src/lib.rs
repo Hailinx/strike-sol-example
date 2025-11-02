@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 
 declare_id!("Aq18qW6eoU9ugFtUBcsknFzXpaTapfPL1vSNrxLEieBm");
 
-const MAX_NUMBER_SIGNERS: usize = 10; // N
+const MAX_SIGNERS: usize = 10; // N
 
 #[program]
 pub mod strike_example {
@@ -13,27 +13,34 @@ pub mod strike_example {
         m_threshold: u8,
         signers: Vec<Pubkey>,
     ) -> Result<()> {
-        require!(m_threshold > 0, ErrorCode::InvalidThreshold);
+        let signers_len = signers.len();
+
         require!(
-            (m_threshold as usize) <= signers.len(),
-            ErrorCode::ThresholdExceedsSigners
+            signers_len > 0 && signers_len <= MAX_SIGNERS,
+            ErrorCode::InvalidSignersCount
         );
         require!(
-            signers.len() <= MAX_NUMBER_SIGNERS,
-            ErrorCode::TooManySigners
+            m_threshold > 0 && (m_threshold as usize) <= signers_len,
+            ErrorCode::InvalidThreshold
         );
+
+        // Check for duplicate signers
+        for i in 0..signers_len {
+            for j in (i + 1)..signers_len {
+                require!(signers[i] != signers[j], ErrorCode::DuplicateSigner);
+            }
+        }
 
         let vault = &mut ctx.accounts.vault;
         vault.authority = ctx.accounts.authority.key();
         vault.m_threshold = m_threshold;
-        vault.signers = signers.clone();
-        vault.nonce = 0;
+        vault.signers = signers;
         vault.bump = ctx.bumps.vault;
 
         msg!(
             "Vault initialized: m={}, n={}, authority={}",
             m_threshold,
-            signers.len(),
+            signers_len,
             vault.authority
         );
 
@@ -43,9 +50,16 @@ pub mod strike_example {
     pub fn deposit_sol(ctx: Context<DepositSol>, amount: u64) -> Result<()> {
         require!(amount > 0, ErrorCode::InvalidAmount);
 
+        // Validate treasury is system-owned.
+        require!(
+            ctx.accounts.treasury.owner == &system_program::ID,
+            ErrorCode::InvalidTreasuryOwner
+        );
+
+        // Instruct trasfer from user -> treasury.
         let ix = anchor_lang::solana_program::system_instruction::transfer(
             &ctx.accounts.user.key(),
-            &ctx.accounts.vault.key(),
+            &ctx.accounts.treasury.key(),
             amount,
         );
 
@@ -53,69 +67,85 @@ pub mod strike_example {
             &ix,
             &[
                 ctx.accounts.user.to_account_info(),
-                ctx.accounts.vault.to_account_info(),
+                ctx.accounts.treasury.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
             ],
         )?;
 
         msg!(
-            "SOL Deposit: user={}, amount={}, vault_balance={}",
+            "Deposit: user={}, amount={}, treasury_balance={}",
             ctx.accounts.user.key(),
             amount,
-            ctx.accounts.vault.to_account_info().lamports()
+            ctx.accounts.treasury.to_account_info().lamports()
         );
 
         Ok(())
     }
 
-    pub fn withdraw_sol(
-        ctx: Context<WithdrawSol>,
-        amount: u64,
-        withdrawal_id: u64,
-    ) -> Result<()> {
+    pub fn withdraw_sol(ctx: Context<WithdrawSol>, amount: u64, withdrawal_id: u64) -> Result<()> {
         require!(amount > 0, ErrorCode::InvalidAmount);
 
         let vault = &mut ctx.accounts.vault;
 
-        let provided_signers: Vec<Pubkey> = ctx
-            .remaining_accounts
-            .iter()
-            .filter(|acc| acc.is_signer)
-            .map(|acc| acc.key())
-            .collect();
-
+        // Validate treasury is system-owned
         require!(
-            provided_signers.len() >= vault.m_threshold as usize,
-            ErrorCode::InsufficientSigners
+            ctx.accounts.treasury.owner == &system_program::ID,
+            ErrorCode::InvalidTreasuryOwner
         );
 
-        // Verify all signers are authorized
-        for signer in &provided_signers {
-            require!(
-                vault.signers.contains(signer),
-                ErrorCode::UnauthorizedSigner
-            );
+        // Ensure M of N valid signers.
+        let mut unique_valid_signers = std::collections::HashSet::new();
+        for signer_account in ctx.remaining_accounts.iter() {
+            require!(signer_account.is_signer, ErrorCode::AccountNotSigner);
+
+            if vault.signers.contains(signer_account.key) {
+                unique_valid_signers.insert(signer_account.key());
+            }
         }
+        require!(
+            unique_valid_signers.len() >= vault.m_threshold as usize,
+            ErrorCode::InsufficientValidSignatures
+        );
 
         // Ensure vault has sufficient balance (accounting for rent)
-        let vault_balance = vault.to_account_info().lamports();
-        let rent_exempt_minimum = Rent::get()?.minimum_balance(vault.to_account_info().data_len());
+        let treasury_balance = ctx.accounts.treasury.lamports();
+        let rent_exempt_minimum: u64 =
+            Rent::get()?.minimum_balance(ctx.accounts.treasury.to_account_info().data_len());
+        let available = treasury_balance.saturating_sub(rent_exempt_minimum);
 
-        require!(
-            vault_balance >= amount + rent_exempt_minimum,
-            ErrorCode::InsufficientFunds
-        );
+        require!(available >= amount, ErrorCode::InsufficientFunds);
 
         // Transfer lamports directly (works with PDAs that have data)
-        **vault.to_account_info().try_borrow_mut_lamports()? -= amount;
-        **ctx.accounts.recipient.to_account_info().try_borrow_mut_lamports()? += amount;
+        let vault_key = vault.key();
+        let seeds = &[b"treasury", vault_key.as_ref(), &[ctx.bumps.treasury]];
+        let signer_seeds = &[&seeds[..]];
+
+        let ix = anchor_lang::solana_program::system_instruction::transfer(
+            &ctx.accounts.treasury.key(),
+            &ctx.accounts.recipient.key(),
+            amount,
+        );
+
+        anchor_lang::solana_program::program::invoke_signed(
+            &ix,
+            &[
+                ctx.accounts.recipient.to_account_info(),
+                ctx.accounts.treasury.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+            signer_seeds,
+        )?;
+
+        // **ctx.accounts.treasury.try_borrow_mut_lamports()? -= amount;
+        // **ctx.accounts.recipient.try_borrow_mut_lamports()? += amount;
 
         msg!(
-            "SOL Withdrawal: id={}, recipient={}, amount={}, signers={}, vault_balance={}",
+            "SOL Withdrawal: id={}, recipient={}, amount={}, signers={}, treasury_balance={}",
             withdrawal_id,
             ctx.accounts.recipient.key(),
             amount,
-            provided_signers.len(),
-            ctx.accounts.vault.to_account_info().lamports()
+            ctx.remaining_accounts.len(),
+            ctx.accounts.treasury.lamports()
         );
 
         Ok(())
@@ -133,6 +163,17 @@ pub struct Initialize<'info> {
     )]
     pub vault: Account<'info, Vault>,
 
+    #[account(
+        init,
+        payer = authority,
+        space = 0,
+        owner = system_program::ID,
+        seeds = [b"treasury", vault.key().as_ref()],
+        bump
+    )]
+    /// CHECK: Treasury PDA initialized as system-owned account with no data
+    pub treasury: UncheckedAccount<'info>,
+
     #[account(mut)]
     pub authority: Signer<'info>,
 
@@ -142,11 +183,18 @@ pub struct Initialize<'info> {
 #[derive(Accounts)]
 pub struct DepositSol<'info> {
     #[account(
-        mut,
         seeds = [b"vault", vault.authority.as_ref()],
         bump = vault.bump
     )]
     pub vault: Account<'info, Vault>,
+
+    #[account(
+        mut,
+        seeds = [b"treasury", vault.key().as_ref()],
+        bump
+    )]
+    /// CHECK: Treasury PDA verified by seeds
+    pub treasury: UncheckedAccount<'info>,
 
     #[account(mut)]
     pub user: Signer<'info>,
@@ -157,44 +205,53 @@ pub struct DepositSol<'info> {
 #[derive(Accounts)]
 pub struct WithdrawSol<'info> {
     #[account(
-        mut,
         seeds = [b"vault", vault.authority.as_ref()],
         bump = vault.bump
     )]
     pub vault: Account<'info, Vault>,
+
+    #[account(
+        mut,
+        seeds = [b"treasury", vault.key().as_ref()],
+        bump
+    )]
+    /// CHECK: Treasury PDA verified by seeds
+    pub treasury: UncheckedAccount<'info>,
 
     /// CHECK: Recipient can be any account
     #[account(mut)]
     pub recipient: AccountInfo<'info>,
 
     pub system_program: Program<'info, System>,
+    // remaining_accounts: M signers who must sign this transaction
 }
 
 #[account]
 #[derive(InitSpace)]
 pub struct Vault {
-    pub authority: Pubkey, // 32
-    pub m_threshold: u8,   // 1
-    #[max_len(MAX_NUMBER_SIGNERS)]
-    pub signers: Vec<Pubkey>, // 4 + (N * 32)
-    pub nonce: u64,        // 8
-    pub bump: u8,          // 1
+    pub authority: Pubkey, // 32 - original creator (for PDA derivation)
+    pub m_threshold: u8,   // 1  - M of N required
+    #[max_len(MAX_SIGNERS)]
+    pub signers: Vec<Pubkey>, // 4 + N*32 - authorized signers
+    pub bump: u8,          // 1  - PDA bump
 }
 
 #[error_code]
 pub enum ErrorCode {
-    #[msg("Invalid threshold value")]
+    #[msg("Invalid signers count")]
+    InvalidSignersCount,
+    #[msg("Invalid m_threshold")]
     InvalidThreshold,
-    #[msg("Threshold exceeds number of signers")]
-    ThresholdExceedsSigners,
-    #[msg("Too many signers")]
-    TooManySigners,
-    #[msg("Invalid amount")]
-    InvalidAmount,
-    #[msg("Insufficient signers provided")]
-    InsufficientSigners,
-    #[msg("Unauthorized signer")]
-    UnauthorizedSigner,
-    #[msg("Insufficient funds in vault")]
+    #[msg("Duplicate signer detected")]
+    DuplicateSigner,
+    #[msg("Not enough valid signatures from authorized signers")]
+    InsufficientValidSignatures,
+    #[msg("Account is not a signer")]
+    AccountNotSigner,
+    #[msg("Insufficient funds in treasury")]
     InsufficientFunds,
+    #[msg("Invalid amount (must be > 0)")]
+    InvalidAmount,
+    #[msg("Treasury must be owned by system program")]
+    InvalidTreasuryOwner,
 }

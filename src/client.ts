@@ -46,6 +46,16 @@ export class MultisigVaultClient {
   }
 
   /**
+   * Derive the treasury PDA address
+   */
+  getTreasuryAddress(vaultPda: PublicKey): [PublicKey, number] {
+    return PublicKey.findProgramAddressSync(
+      [Buffer.from("treasury"), vaultPda.toBuffer()],
+      this.program.programId
+    );
+  }
+
+  /**
    * Initialize a new multisig vault
    */
   async initialize(
@@ -54,11 +64,13 @@ export class MultisigVaultClient {
     signers: PublicKey[]
   ): Promise<{ signature: string; vaultAddress: PublicKey }> {
     const [vaultPda] = this.getVaultAddress(authority.publicKey);
+    const [treasuryPda] = this.getTreasuryAddress(vaultPda);
 
     const tx = await this.program.methods
       .initialize(mThreshold, signers)
       .accounts({
         vault: vaultPda,
+        treasury: treasuryPda,
         authority: authority.publicKey,
         systemProgram: SystemProgram.programId,
       } as any)
@@ -94,12 +106,14 @@ export class MultisigVaultClient {
     amountSol: number
   ): Promise<string> {
     const [vaultPda] = this.getVaultAddress(this.provider.wallet.publicKey);
+    const [treasuryPda] = this.getTreasuryAddress(vaultPda);
     const amountLamports = amountSol * LAMPORTS_PER_SOL;
 
     const tx = await this.program.methods
       .depositSol(new BN(amountLamports))
       .accounts({
         vault: vaultPda,
+        treasury: treasuryPda,
         user: user.publicKey,
         systemProgram: SystemProgram.programId,
       } as any)
@@ -132,6 +146,7 @@ export class MultisigVaultClient {
     signers: Keypair[]
   ): Promise<string> {
     const [vaultPda] = this.getVaultAddress(this.provider.wallet.publicKey);
+    const [treasuryPda] = this.getTreasuryAddress(vaultPda);
     const amountLamports = amountSol * LAMPORTS_PER_SOL;
 
     // Build remaining accounts for signers
@@ -148,6 +163,7 @@ export class MultisigVaultClient {
       )
       .accounts({
         vault: vaultPda,
+        treasury: treasuryPda,
         recipient: recipient,
         systemProgram: SystemProgram.programId,
       } as any)
@@ -177,7 +193,6 @@ export class MultisigVaultClient {
       authority: vaultAccount.authority,
       mThreshold: vaultAccount.mThreshold,
       signers: vaultAccount.signers,
-      nonce: vaultAccount.nonce,
       bump: vaultAccount.bump,
       balanceSol: balance / LAMPORTS_PER_SOL,
       balanceLamports: balance,
