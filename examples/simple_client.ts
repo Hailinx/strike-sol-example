@@ -1,6 +1,16 @@
-import { setupClient, loadKeypairFromJson, ANCHOR_WALLET, ANCHOR_PROVIDER_URL,  printEnv } from "../src/client";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import * as anchor from "@coral-xyz/anchor";
+
+import {
+  setupClient, 
+  loadKeypairFromJson, 
+  ANCHOR_WALLET, 
+  ANCHOR_PROVIDER_URL, 
+  printEnv,
+} from "../src/client";
+import { loadOrCreateKeypairs } from "./key_loader";
+
+const N_KEYS_PATH = "./examples/n_test_keys.json";
 
 async function main() {
   printEnv()
@@ -16,21 +26,23 @@ async function main() {
 
   const client = setupClient(authority, ANCHOR_PROVIDER_URL);
 
-  const M = 3, N = 5;
-  const signers = [];
-  for (var i = 0; i < N; i++) {
-    const signer = Keypair.generate();
-    signers.push(signer);
-    console.log(`create mock signer with public key: ${signer.publicKey.toBase58()}`)
-  }
+  let M = 3, N = 5;
+  const signers = await loadOrCreateKeypairs(N_KEYS_PATH, N);
+  N = signers.length;
 
   const signersPubKeys = [];
   for (const signer of signers) {
     signersPubKeys.push(signer.publicKey);
+    console.log(`signer: ${signer.publicKey.toBase58()}`);
   }
 
-  const { vaultAddress } = await client.initializeForSelf(M, signersPubKeys);
-  console.log(`Vault created: ${vaultAddress.toBase58()}`);
+  try {
+    const valueData = await client.getVaultData(authority.publicKey);
+    console.log(`Vault exist: ${valueData.address.toBase58()}`);
+  } catch {
+    const { vaultAddress } = await client.initializeForSelf(M, signersPubKeys);
+    console.log(`Vault created: ${vaultAddress.toBase58()}`);
+  }
 
   await client.depositSolFromSelf(1.0);
 

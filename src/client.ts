@@ -209,6 +209,16 @@ export class MultisigVaultClient {
   }
 
   /**
+   * Get treasury balance in SOL
+   */
+  async getTreasuryBalance(vaultAuthority: PublicKey): Promise<number> {
+    const [vaultPda] = this.getVaultAddress(vaultAuthority);
+    const [treasuryPda] = this.getTreasuryAddress(vaultPda);
+    const balance = await this.provider.connection.getBalance(treasuryPda);
+    return balance / LAMPORTS_PER_SOL;
+  }
+
+  /**
    * Check if an account is a valid signer for the vault
    */
   async isValidSigner(
