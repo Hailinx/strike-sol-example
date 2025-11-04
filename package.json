@@ -11,7 +11,8 @@
     "@coral-xyz/anchor": "0.32.1",
     "@solana/web3.js": "^1.90.0",
     "bn.js": "^5.2.2",
-    "dotenv": "^16.0.0"
+    "dotenv": "^16.0.0",
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
     "ts-node": "^10.9.1",

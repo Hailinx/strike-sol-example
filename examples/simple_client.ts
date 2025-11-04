@@ -7,6 +7,7 @@ import {
   ANCHOR_WALLET, 
   ANCHOR_PROVIDER_URL, 
   printEnv,
+  NetworkId,
 } from "../src/client";
 import { loadOrCreateKeypairs } from "./key_loader";
 
@@ -26,8 +27,8 @@ async function main() {
 
   const client = setupClient(authority, ANCHOR_PROVIDER_URL);
 
-  let M = 3, N = 5;
-  const signers = await loadOrCreateKeypairs(N_KEYS_PATH, N);
+  let M = 2, N = 5;
+  const signers: Keypair[] = await loadOrCreateKeypairs(N_KEYS_PATH, N);
   N = signers.length;
 
   const signersPubKeys = [];
@@ -46,11 +47,25 @@ async function main() {
 
   await client.depositSolFromSelf(1.0);
 
-  await client.withdrawSol(
-    signers[0].publicKey,
-    0.5,           // amount in SOL
-    1,             // withdrawal ID
-    [signers[0], signers[1], signers[2]]  // provide M signatures
+  const recipient = signers[0].publicKey;
+  const amountSol = 0.5;
+  const requestId = Date.now(); // Use timestamp as unique request ID
+  const expiryDurationSeconds = 3600; // 1 hour
+
+  // Determine network ID based on provider URL
+  let networkId = NetworkId.DEVNET;
+  if (ANCHOR_PROVIDER_URL.includes("mainnet")) {
+    networkId = NetworkId.MAINNET;
+  } else if (ANCHOR_PROVIDER_URL.includes("testnet")) {
+    networkId = NetworkId.TESTNET;
+  }
+  await client.createAndExecuteWithdrawal(
+    recipient,
+    amountSol,
+    requestId,
+    [signers[1], signers[2]], // Provide M signatures
+    expiryDurationSeconds,
+    networkId
   );
 }
 
