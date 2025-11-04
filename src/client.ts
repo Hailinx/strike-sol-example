@@ -313,6 +313,7 @@ export class MultisigVaultClient {
         nonceAccount: noncePda,
         payer: actualPayer.publicKey,
         systemProgram: SystemProgram.programId,
+        instructions: SYSVAR_INSTRUCTIONS_PUBKEY
       } as any)
       .preInstructions(edIxs)
       .signers([actualPayer])
