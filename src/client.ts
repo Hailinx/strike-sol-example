@@ -345,7 +345,6 @@ export class MultisigVaultClient {
 
     // Convert signatures to program format
     const sigsArg = signersWithSigs.map(s => ({
-      ethAddress: Array.from(s.ethAddress),
       signature: Array.from(s.signature),
       recoveryId: s.recoveryId,
     }));
