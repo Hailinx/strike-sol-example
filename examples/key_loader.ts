@@ -1,16 +1,16 @@
-import { Keypair } from "@solana/web3.js";
 import { promises as fs } from "fs";
 import * as path from "path";
+import { MultisigVaultClient, EthereumKeypair } from "../src/client";
 
-export async function loadOrCreateKeypairs(
+interface StoredEthKeypair {
+  privateKey: string; // hex string
+  address: string;    // hex string (0x prefixed)
+}
+
+export async function loadOrCreateEthKeypairs(
   filePath: string,
   n: number
-): Promise<Keypair[]> {
-  const isValidSecretArray = (arr: any): arr is number[] =>
-    Array.isArray(arr) &&
-    arr.length >= 32 &&
-    arr.every((x) => Number.isInteger(x) && x >= 0 && x <= 255);
-
+): Promise<EthereumKeypair[]> {
   try {
     const raw = await fs.readFile(filePath, { encoding: "utf8" });
     let parsed: unknown;
@@ -24,13 +24,13 @@ export async function loadOrCreateKeypairs(
       throw new Error(`Invalid format: expected JSON array in ${filePath}`);
     }
 
-    const keypairs: Keypair[] = [];
+    const keypairs: EthereumKeypair[] = [];
     for (const entry of parsed) {
-      if (!isValidSecretArray(entry)) {
-        throw new Error(`Invalid secret key entry found in ${filePath}. Each entry must be an array of numbers (bytes).`);
+      if (typeof entry !== "object" || !entry.privateKey || !entry.address) {
+        throw new Error(`Invalid keypair entry in ${filePath}`);
       }
-      const secret = Uint8Array.from(entry);
-      const kp = Keypair.fromSecretKey(secret);
+      const stored = entry as StoredEthKeypair;
+      const kp = MultisigVaultClient.loadEthereumKeypair(stored.privateKey);
       keypairs.push(kp);
     }
 
@@ -38,16 +38,27 @@ export async function loadOrCreateKeypairs(
       throw new Error(`No keypairs found in ${filePath}`);
     }
 
-    console.log(`Loaded ${keypairs.length} keypair(s) from ${filePath}`);
+    console.log(`Loaded ${keypairs.length} Ethereum keypair(s) from ${filePath}`);
     return keypairs;
   } catch (err: any) {
     if (err.code === "ENOENT") {
-      console.log(`${filePath} not found — generating ${n} new keypair(s) and saving to file.`);
-      const gens: Keypair[] = [];
+      console.log(`${filePath} not found — generating ${n} new Ethereum keypair(s) and saving to file.`);
+      const gens: EthereumKeypair[] = [];
+      const toStore: StoredEthKeypair[] = [];
+      
       for (let i = 0; i < n; i++) {
-        const signer = Keypair.generate();
-        gens.push(signer);
-        console.log(`create mock signer with public key: ${signer.publicKey.toBase58()}`);
+        const kp = MultisigVaultClient.generateEthereumKeypair();
+        gens.push(kp);
+        
+        const privateKeyHex = Buffer.from(kp.privateKey).toString("hex");
+        const addressHex = "0x" + Buffer.from(kp.address).toString("hex");
+        
+        toStore.push({
+          privateKey: privateKeyHex,
+          address: addressHex,
+        });
+        
+        console.log(`Generated Ethereum signer with address: ${addressHex}`);
       }
 
       const dir = path.dirname(filePath);
@@ -57,14 +68,9 @@ export async function loadOrCreateKeypairs(
         // ignore
       }
 
-      const payload = JSON.stringify(
-        gens.map((kp) => Array.from(kp.secretKey)),
-        null,
-        2
-      );
-
+      const payload = JSON.stringify(toStore, null, 2);
       await fs.writeFile(filePath, payload, { mode: 0o600 });
-      console.log(`Saved ${gens.length} keypair(s) to ${filePath} (permissions 0o600)`);
+      console.log(`Saved ${gens.length} Ethereum keypair(s) to ${filePath} (permissions 0o600)`);
 
       return gens;
     }

@@ -1,5 +1,4 @@
-import { Keypair, PublicKey } from "@solana/web3.js";
-import * as anchor from "@coral-xyz/anchor";
+import { Keypair } from "@solana/web3.js";
 
 import {
   setupClient, 
@@ -9,12 +8,12 @@ import {
   printEnv,
   NetworkId,
 } from "../src/client";
-import { loadOrCreateKeypairs } from "./key_loader";
+import { loadOrCreateEthKeypairs } from "./key_loader";
 
-const N_KEYS_PATH = "./examples/n_test_keys.json";
+const ETH_KEYS_PATH = "./examples/n_test_keys.json";
 
 async function main() {
-  printEnv()
+  printEnv();
 
   let authority: Keypair;
   try {
@@ -27,27 +26,32 @@ async function main() {
 
   const client = setupClient(authority, ANCHOR_PROVIDER_URL);
 
-  let M = 2, N = 5;
-  const signers: Keypair[] = await loadOrCreateKeypairs(N_KEYS_PATH, N);
-  N = signers.length;
+  let M = 3, N = 5;
+  const ethSigners = await loadOrCreateEthKeypairs(ETH_KEYS_PATH, N);
+  N = ethSigners.length;
 
-  const signersPubKeys = [];
-  for (const signer of signers) {
-    signersPubKeys.push(signer.publicKey);
-    console.log(`signer: ${signer.publicKey.toBase58()}`);
+  const ethAddresses = ethSigners.map(s => s.address);
+  
+  console.log(`\nEthereum Signers:`);
+  for (let i = 0; i < ethSigners.length; i++) {
+    const addressHex = "0x" + Buffer.from(ethSigners[i].address).toString("hex");
+    console.log(`  [${i}] ${addressHex}`);
   }
 
   try {
-    const valueData = await client.getVaultData(authority.publicKey);
-    console.log(`Vault exist: ${valueData.address.toBase58()}`);
+    const vaultData = await client.getVaultData(authority.publicKey);
+    console.log(`\nVault exists: ${vaultData.address.toBase58()}`);
+    console.log(`  M-of-N: ${vaultData.mThreshold} of ${vaultData.signers.length}`);
+    console.log(`  Treasury Balance: ${vaultData.balanceSol} SOL`);
   } catch {
-    const { vaultAddress } = await client.initializeForSelf(M, signersPubKeys);
+    console.log(`\nInitializing new vault with M=${M}, N=${N}...`);
+    const { vaultAddress } = await client.initializeForSelf(M, ethAddresses);
     console.log(`Vault created: ${vaultAddress.toBase58()}`);
   }
 
+  console.log(`\nDepositing 1.0 SOL...`);
   await client.depositSolFromSelf(1.0);
 
-  const recipient = signers[0].publicKey;
   const amountSol = 0.5;
   const requestId = Date.now(); // Use timestamp as unique request ID
   const expiryDurationSeconds = 3600; // 1 hour
@@ -59,11 +63,21 @@ async function main() {
   } else if (ANCHOR_PROVIDER_URL.includes("testnet")) {
     networkId = NetworkId.TESTNET;
   }
+
+  // Create a new Solana recipient keypair for the withdrawal
+  const recipient = Keypair.generate();
+  console.log(`\nRecipient: ${recipient.publicKey.toBase58()}`);
+
+  console.log(`\nExecuting withdrawal with M=${M} signatures...`);
+  console.log(`  Amount: ${amountSol} SOL`);
+  console.log(`  Request ID: ${requestId}`);
+  console.log(`  Using signers [1] and [2]`);
+
   await client.createAndExecuteWithdrawal(
-    recipient,
+    recipient.publicKey,
     amountSol,
     requestId,
-    [signers[1], signers[2]], // Provide M signatures
+    [ethSigners[1], ethSigners[2], ethSigners[3]], // Provide M signatures
     expiryDurationSeconds,
     networkId
   );

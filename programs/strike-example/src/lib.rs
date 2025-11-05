@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
-use solana_program::hash::hash;
+use solana_program::secp256k1_recover::secp256k1_recover;
+use solana_program::keccak;
 
 declare_id!("Aq18qW6eoU9ugFtUBcsknFzXpaTapfPL1vSNrxLEieBm");
 
@@ -13,7 +14,7 @@ pub mod strike_example {
     pub fn initialize(
         ctx: Context<Initialize>,
         m_threshold: u8,
-        signers: Vec<Pubkey>,
+        signers: Vec<[u8; 20]>, // Ethereum addresses (20 bytes)
     ) -> Result<()> {
         let signers_len = signers.len();
 
@@ -116,26 +117,30 @@ pub mod strike_example {
             ErrorCode::InsufficientSignatures
         );
 
-        // 5. Compute message hash
+        // 5. Compute message hash (Ethereum compatible - keccak256)
         let message_hash = ticket.hash();
 
-        // 6. Verify M-of-N Ed25519 signatures
+        // 6. Verify M-of-N secp256k1 signatures using recovery
         let mut unique_valid_signers = std::collections::HashSet::new();
 
         for signer_sig in signers_with_sigs.iter() {
             // Verify this is an authorized signer
-            if !vault.signers.contains(&signer_sig.pubkey) {
+            if !vault.signers.contains(&signer_sig.eth_address) {
                 continue;
             }
 
-            // Verify Ed25519 signature
-            if verify_ed25519_signature_from_instructions(
-                &ctx.accounts.instructions,
-                &message_hash,
-                &signer_sig.signature,
-                &signer_sig.pubkey.to_bytes(),
-            )? {
-                unique_valid_signers.insert(signer_sig.pubkey);
+            // Recover the public key from the signature
+            match recover_eth_address(&message_hash, &signer_sig.signature, signer_sig.recovery_id)
+            {
+                Ok(recovered_address) => {
+                    // Check if recovered address matches the claimed signer
+                    if recovered_address == signer_sig.eth_address {
+                        unique_valid_signers.insert(signer_sig.eth_address);
+                    }
+                }
+                Err(_) => {
+                    continue;
+                }
             }
         }
 
@@ -279,20 +284,16 @@ pub struct WithdrawSol<'info> {
     pub payer: Signer<'info>,
 
     pub system_program: Program<'info, System>,
-
-    /// CHECK: instructions sysvar (used to inspect Ed25519 precompile instruction)
-    #[account(address = sysvar::instructions::ID)]
-    pub instructions: AccountInfo<'info>,
 }
 
 #[account]
 #[derive(InitSpace)]
 pub struct Vault {
-    pub authority: Pubkey, // 32 - original creator (for PDA derivation)
-    pub m_threshold: u8,   // 1  - M of N required
+    pub authority: Pubkey,     // 32 - original creator (for PDA derivation)
+    pub m_threshold: u8,       // 1  - M of N required
     #[max_len(MAX_SIGNERS)]
-    pub signers: Vec<Pubkey>, // 4 + N*32 - authorized signers
-    pub bump: u8,          // 1  - PDA bump
+    pub signers: Vec<[u8; 20]>, // 4 + N*20 - Ethereum addresses of authorized signers
+    pub bump: u8,              // 1  - PDA bump
 }
 
 #[account]
@@ -303,8 +304,9 @@ pub struct NonceAccount {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct SignerWithSignature {
-    pub pubkey: Pubkey,
-    pub signature: [u8; 64],
+    pub eth_address: [u8; 20], // Ethereum address of the signer
+    pub signature: [u8; 64],   // r and s components (32 bytes each)
+    pub recovery_id: u8,       // v component (0, 1, 27, or 28)
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
@@ -318,7 +320,7 @@ pub struct WithdrawalTicket {
 }
 
 impl WithdrawalTicket {
-    /// Compute hash for signing using Solana's native hash
+    /// Compute keccak256 hash for signing (Ethereum compatible)
     pub fn hash(&self) -> [u8; 32] {
         let mut data = Vec::new();
 
@@ -333,78 +335,37 @@ impl WithdrawalTicket {
         data.extend_from_slice(&self.expiry.to_le_bytes());
         data.extend_from_slice(&self.network_id.to_le_bytes());
 
-        hash(&data).to_bytes()
+        // Use keccak256 for Ethereum compatibility
+        let hash_result = keccak::hash(&data);
+        hash_result.to_bytes()
     }
 }
 
-/// Verify Ed25519 signature using Solana's syscall
-fn verify_ed25519_signature_from_instructions(
-    instructions_sysvar: &AccountInfo,
-    message: &[u8; 32],
+/// Recover Ethereum address from signature using secp256k1_recover syscall
+fn recover_eth_address(
+    message_hash: &[u8; 32],
     signature: &[u8; 64],
-    pubkey: &[u8; 32],
-) -> Result<bool> {
-    use solana_program::ed25519_program;
-    use solana_program::sysvar::instructions::{load_instruction_at_checked, load_current_index_checked};
+    recovery_id: u8,
+) -> Result<[u8; 20]> {
+    // Normalize recovery_id: Ethereum uses 27/28, but syscall expects 0/1
+    let normalized_recovery_id = match recovery_id {
+        0 | 1 => recovery_id,
+        27 | 28 => recovery_id - 27,
+        _ => return err!(ErrorCode::InvalidRecoveryId),
+    };
 
-    // Get current instruction index
-    let current_index = load_current_index_checked(instructions_sysvar)?;
+    // Recover the 64-byte public key from the signature
+    let recovered_pubkey = secp256k1_recover(message_hash, normalized_recovery_id, signature)
+        .map_err(|_| ErrorCode::InvalidSignature)?;
 
-    // Search backwards through instructions before the current one
-    for i in 0..current_index {
-        let ix = load_instruction_at_checked(i as usize, instructions_sysvar)?;
+    // Derive Ethereum address: keccak256(pubkey)[12..32]
+    let pubkey_hash = keccak::hash(&recovered_pubkey.to_bytes());
+    let hash_bytes = pubkey_hash.to_bytes();
 
-        // Check if this is an Ed25519 verification instruction
-        if ix.program_id != ed25519_program::ID {
-            continue;
-        }
+    let mut eth_address = [0u8; 20];
+    eth_address.copy_from_slice(&hash_bytes[12..32]);
 
-        // Parse the Ed25519 instruction data
-        // Format: [num_signatures: u8, padding: u8, [signature_offset: u16, sig_ix_offset: u16, 
-        //          pubkey_offset: u16, pubkey_ix_offset: u16, message_offset: u16, 
-        //          message_size: u16, message_ix_offset: u16] * num_signatures, 
-        //          padding to 16-byte alignment, signatures, pubkeys, messages]
-        
-        if ix.data.len() < 16 {
-            continue;
-        }
-
-        let num_signatures = ix.data[0];
-        if num_signatures == 0 {
-            continue;
-        }
-
-        // For simplicity, we'll check the first signature entry
-        // In production, you'd want to iterate through all signature entries
-        
-        let sig_offset = u16::from_le_bytes([ix.data[2], ix.data[3]]) as usize;
-        let pubkey_offset = u16::from_le_bytes([ix.data[6], ix.data[7]]) as usize;
-        let message_offset = u16::from_le_bytes([ix.data[10], ix.data[11]]) as usize;
-        let message_size = u16::from_le_bytes([ix.data[12], ix.data[13]]) as usize;
-
-        // Verify offsets are within bounds
-        if sig_offset + 64 > ix.data.len() 
-            || pubkey_offset + 32 > ix.data.len() 
-            || message_offset + message_size > ix.data.len() {
-            continue;
-        }
-
-        // Check if this instruction verifies our specific signature
-        let ix_signature = &ix.data[sig_offset..sig_offset + 64];
-        let ix_pubkey = &ix.data[pubkey_offset..pubkey_offset + 32];
-        let ix_message = &ix.data[message_offset..message_offset + message_size];
-
-        if ix_signature == signature 
-            && ix_pubkey == pubkey 
-            && ix_message == message {
-            // Found a matching Ed25519 verification instruction
-            // If we got here, the Ed25519 program already verified it successfully
-            return Ok(true);
-        }
-    }
-
-    // No matching Ed25519 instruction found
-    Ok(false)
+    Ok(eth_address)
 }
 
 #[error_code]
@@ -435,6 +396,8 @@ pub enum ErrorCode {
     InvalidRecipient,
     #[msg("Insufficient signatures provided")]
     InsufficientSignatures,
-    #[msg("Invalid Ed25519 signature")]
+    #[msg("Invalid secp256k1 signature")]
     InvalidSignature,
+    #[msg("Invalid recovery ID (must be 0, 1, 27, or 28)")]
+    InvalidRecoveryId,
 }

@@ -2,8 +2,6 @@ import * as fs from "fs";
 import * as path from "path";
 import os from "os";
 import dotenv from "dotenv";
-import nacl from "tweetnacl";
-import * as crypto from "crypto";
 
 import BN from "bn.js";
 import * as anchor from "@coral-xyz/anchor";
@@ -14,9 +12,9 @@ import {
   PublicKey,
   LAMPORTS_PER_SOL,
   SystemProgram,
-  Ed25519Program,
-  SYSVAR_INSTRUCTIONS_PUBKEY,
 } from "@solana/web3.js";
+import { keccak256 } from "ethereum-cryptography/keccak";
+import { secp256k1 } from "ethereum-cryptography/secp256k1";
 import { StrikeExample } from "../target/types/strike_example";
 import idl from "../target/idl/strike_example.json";
 
@@ -51,10 +49,16 @@ export interface WithdrawalTicket {
   networkId: BN;
 }
 
+export interface EthereumKeypair {
+  privateKey: Uint8Array; // 32 bytes
+  publicKey: Uint8Array;  // 64 bytes (uncompressed, without prefix)
+  address: Uint8Array;    // 20 bytes (Ethereum address)
+}
+
 export interface SignerWithSignature {
-  hash: Buffer,
-  pubkey: PublicKey;
-  signature: Buffer;
+  ethAddress: Uint8Array;  // 20 bytes
+  signature: Uint8Array;   // 64 bytes (r + s)
+  recoveryId: number;      // 0, 1, 27, or 28
 }
 
 export class MultisigVaultClient {
@@ -67,6 +71,46 @@ export class MultisigVaultClient {
   ) {
     this.program = program;
     this.provider = provider;
+  }
+
+  /**
+   * Generate an Ethereum-compatible keypair
+   */
+  static generateEthereumKeypair(): EthereumKeypair {
+    const privateKey = secp256k1.utils.randomPrivateKey();
+    const publicKeyFull = secp256k1.getPublicKey(privateKey, false); // uncompressed (65 bytes with 0x04 prefix)
+    const publicKey = publicKeyFull.slice(1); // Remove 0x04 prefix (64 bytes)
+    
+    // Ethereum address: keccak256(publicKey)[12:32]
+    const hash = keccak256(publicKey);
+    const address = hash.slice(-20);
+    
+    return {
+      privateKey,
+      publicKey,
+      address,
+    };
+  }
+
+  /**
+   * Load Ethereum keypair from hex string (private key)
+   */
+  static loadEthereumKeypair(privateKeyHex: string): EthereumKeypair {
+    // Remove 0x prefix if present
+    const hex = privateKeyHex.startsWith("0x") ? privateKeyHex.slice(2) : privateKeyHex;
+    const privateKey = new Uint8Array(Buffer.from(hex, "hex"));
+    
+    const publicKeyFull = secp256k1.getPublicKey(privateKey, false);
+    const publicKey = publicKeyFull.slice(1);
+    
+    const hash = keccak256(publicKey);
+    const address = hash.slice(-20);
+    
+    return {
+      privateKey,
+      publicKey,
+      address,
+    };
   }
 
   /**
@@ -103,18 +147,21 @@ export class MultisigVaultClient {
   }
 
   /**
-   * Initialize a new multisig vault
+   * Initialize a new multisig vault with Ethereum addresses
    */
   async initialize(
     authority: Keypair,
     mThreshold: number,
-    signers: PublicKey[]
+    ethAddresses: Uint8Array[] // Array of 20-byte Ethereum addresses
   ): Promise<{ signature: string; vaultAddress: PublicKey }> {
     const [vaultPda] = this.getVaultAddress(authority.publicKey);
     const [treasuryPda] = this.getTreasuryAddress(vaultPda);
 
+    // Convert to arrays for Anchor
+    const signersArray = ethAddresses.map(addr => Array.from(addr));
+
     const tx = await this.program.methods
-      .initialize(mThreshold, signers)
+      .initialize(mThreshold, signersArray)
       .accounts({
         vault: vaultPda,
         treasury: treasuryPda,
@@ -127,7 +174,7 @@ export class MultisigVaultClient {
     console.log(`✅ Vault initialized: ${vaultPda.toBase58()}`);
     console.log(`   Treasury: ${treasuryPda.toBase58()}`);
     console.log(`   Transaction: ${tx}`);
-    console.log(`   M-of-N: ${mThreshold} of ${signers.length}`);
+    console.log(`   M-of-N: ${mThreshold} of ${ethAddresses.length}`);
 
     return {
       signature: tx,
@@ -140,10 +187,10 @@ export class MultisigVaultClient {
    */
   async initializeForSelf(
     mThreshold: number,
-    signers: PublicKey[]
+    ethAddresses: Uint8Array[]
   ): Promise<{ signature: string; vaultAddress: PublicKey }> {
     const authority = (this.provider.wallet as any).payer as Keypair;
-    return this.initialize(authority, mThreshold, signers);
+    return this.initialize(authority, mThreshold, ethAddresses);
   }
 
   /**
@@ -185,9 +232,9 @@ export class MultisigVaultClient {
   }
 
   /**
-   * Create a withdrawal ticket hash for signing
+   * Create a withdrawal ticket hash for signing (keccak256)
    */
-  createTicketHash(ticket: WithdrawalTicket): Buffer {
+  createTicketHash(ticket: WithdrawalTicket): Uint8Array {
     const data: Buffer[] = [];
     
     // Domain separator
@@ -222,21 +269,27 @@ export class MultisigVaultClient {
     // Concatenate all data
     const combined = Buffer.concat(data);
     
-    // Hash using Solana's hash function (SHA-256)
-    return crypto.createHash("sha256").update(combined).digest();
+    // Hash using keccak256 (Ethereum compatible)
+    return keccak256(combined);
   }
 
   /**
-   * Sign a withdrawal ticket with a keypair
+   * Sign a withdrawal ticket with an Ethereum keypair
    */
-  signTicket(ticket: WithdrawalTicket, signer: Keypair): SignerWithSignature {
+  signTicket(ticket: WithdrawalTicket, ethKeypair: EthereumKeypair): SignerWithSignature {
     const messageHash = this.createTicketHash(ticket);
-    const signature = nacl.sign.detached(messageHash, signer.secretKey);
+    
+    // Sign with secp256k1
+    const sig = secp256k1.sign(messageHash, ethKeypair.privateKey);
+    
+    // Extract r, s, and recovery ID
+    const signature = sig.toCompactRawBytes(); // 64 bytes (r + s)
+    const recoveryId = sig.recovery!; // 0 or 1
     
     return {
-      hash: Buffer.from(messageHash),
-      pubkey: signer.publicKey,
-      signature: Buffer.from(signature),
+      ethAddress: ethKeypair.address,
+      signature,
+      recoveryId,
     };
   }
 
@@ -269,7 +322,7 @@ export class MultisigVaultClient {
    */
   async withdrawSol(
     ticket: WithdrawalTicket,
-    signers: Keypair[],
+    ethKeypairs: EthereumKeypair[],
     payer?: Keypair
   ): Promise<string> {
     const [treasuryPda] = this.getTreasuryAddress(ticket.vault);
@@ -278,7 +331,7 @@ export class MultisigVaultClient {
     const actualPayer = payer || (this.provider.wallet as any).payer as Keypair;
 
     // Sign the ticket with all provided signers
-    const signersWithSigs = signers.map(signer => this.signTicket(ticket, signer));
+    const signersWithSigs = ethKeypairs.map(kp => this.signTicket(ticket, kp));
 
     // Convert ticket to program format
     const ticketArg = {
@@ -292,17 +345,10 @@ export class MultisigVaultClient {
 
     // Convert signatures to program format
     const sigsArg = signersWithSigs.map(s => ({
-      pubkey: s.pubkey,
+      ethAddress: Array.from(s.ethAddress),
       signature: Array.from(s.signature),
+      recoveryId: s.recoveryId,
     }));
-
-    const edIxs = signersWithSigs.map(s => 
-      Ed25519Program.createInstructionWithPublicKey({
-        publicKey: s.pubkey.toBytes(),
-        message: s.hash,
-        signature: s.signature,
-      })
-    );
 
     const tx = await this.program.methods
       .withdrawSol(ticketArg, sigsArg)
@@ -313,9 +359,7 @@ export class MultisigVaultClient {
         nonceAccount: noncePda,
         payer: actualPayer.publicKey,
         systemProgram: SystemProgram.programId,
-        instructions: SYSVAR_INSTRUCTIONS_PUBKEY
       } as any)
-      .preInstructions(edIxs)
       .signers([actualPayer])
       .rpc();
 
@@ -336,7 +380,7 @@ export class MultisigVaultClient {
     recipient: PublicKey,
     amountSol: number,
     requestId: number,
-    signers: Keypair[],
+    ethKeypairs: EthereumKeypair[],
     expiryDurationSeconds: number = 3600, // 1 hour default
     networkId: NetworkId = NetworkId.DEVNET,
     payer?: Keypair
@@ -354,7 +398,7 @@ export class MultisigVaultClient {
       networkId
     );
 
-    return this.withdrawSol(ticket, signers, payer);
+    return this.withdrawSol(ticket, ethKeypairs, payer);
   }
 
   /**
@@ -364,7 +408,8 @@ export class MultisigVaultClient {
     const [vaultPda] = this.getVaultAddress(vaultAuthority);
     const vaultAccount = await this.program.account.vault.fetch(vaultPda);
 
-    const balance = await this.provider.connection.getBalance(vaultPda);
+    const [treasuryPda] = this.getTreasuryAddress(vaultPda);
+    const balance = await this.provider.connection.getBalance(treasuryPda);
 
     return {
       address: vaultPda,
@@ -378,15 +423,6 @@ export class MultisigVaultClient {
   }
 
   /**
-   * Get vault balance in SOL
-   */
-  async getVaultBalance(vaultAuthority: PublicKey): Promise<number> {
-    const [vaultPda] = this.getVaultAddress(vaultAuthority);
-    const balance = await this.provider.connection.getBalance(vaultPda);
-    return balance / LAMPORTS_PER_SOL;
-  }
-
-  /**
    * Get treasury balance in SOL
    */
   async getTreasuryBalance(vaultAuthority: PublicKey): Promise<number> {
@@ -397,14 +433,16 @@ export class MultisigVaultClient {
   }
 
   /**
-   * Check if an account is a valid signer for the vault
+   * Check if an Ethereum address is a valid signer for the vault
    */
   async isValidSigner(
     vaultAuthority: PublicKey,
-    signer: PublicKey
+    ethAddress: Uint8Array
   ): Promise<boolean> {
     const vaultData = await this.getVaultData(vaultAuthority);
-    return vaultData.signers.some((s) => s.equals(signer));
+    return vaultData.signers.some((s: number[]) => 
+      s.every((byte, idx) => byte === ethAddress[idx])
+    );
   }
 
   /**
@@ -444,9 +482,7 @@ export function loadKeypairFromJson(filePath: string): Keypair {
     throw new Error(`Failed to parse JSON in ${expanded}: ${(err as Error).message}`);
   }
 
-  // parsed should be an array of numbers (secret key)
   if (!Array.isArray(parsed)) {
-    // Some files include an object like {"_keypair": { "secretKey": [...] } }
     if ((parsed as any)._keypair?.secretKey) {
       const sk = Uint8Array.from((parsed as any)._keypair.secretKey);
       return Keypair.fromSecretKey(sk);
