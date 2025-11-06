@@ -1,4 +1,5 @@
 pub mod accounts;
+pub mod asset;
 pub mod deposit;
 pub mod initialize;
 pub mod withdraw;
@@ -7,6 +8,7 @@ pub mod models;
 pub mod util;
 
 pub use accounts::*;
+pub use asset::*;
 pub use deposit::*;
 pub use initialize::*;
 pub use models::*;
@@ -15,7 +17,6 @@ pub use withdraw::*;
 pub mod constant {
     pub const MAX_SIGNERS: usize = 10; // N
     pub const MAX_ASSETS: usize = 20;
-    pub const DOMAIN_SEPARATOR: &str = "strike-protocol-v1";
 }
 
 pub mod errors {
@@ -53,5 +54,13 @@ pub mod errors {
         InvalidSignature,
         #[msg("Invalid recovery ID (must be 0, 1, 27, or 28)")]
         InvalidRecoveryId,
+        #[msg("Asset not whitelisted")]
+        AssetNotWhitelisted,
+        #[msg("No deposits provided")]
+        NoDepositsProvided,
+        #[msg("No withdrawals provided")]
+        NoWithdrawalsProvided,
+        #[msg("Token account not found")]
+        TokenAccountNotFound,
     }
 }
