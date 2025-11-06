@@ -18,7 +18,7 @@ pub fn deposit<'info>(
         require!(deposit_item.amount > 0, ErrorCode::InvalidAmount);
 
         require!(
-            ctx.accounts.vault.whitelisted_assets.contains(&deposit_item.asset), 
+            vault.whitelisted_assets.contains(&deposit_item.asset),
             ErrorCode::AssetNotWhitelisted
         );
 

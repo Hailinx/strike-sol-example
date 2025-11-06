@@ -55,8 +55,8 @@ pub fn withdraw<'info>(
 
                 // Check sufficient balance
                 let treasury_balance = ctx.accounts.treasury.lamports();
-                let rent_exempt_minimum =
-                    Rent::get()?.minimum_balance(ctx.accounts.treasury.to_account_info().data_len());
+                let rent_exempt_minimum = Rent::get()?
+                    .minimum_balance(ctx.accounts.treasury.to_account_info().data_len());
                 let available = treasury_balance.saturating_sub(rent_exempt_minimum);
 
                 require!(available >= withdrawal.amount, ErrorCode::InsufficientFunds);
@@ -125,8 +125,7 @@ pub fn withdraw<'info>(
                     authority: vault.to_account_info(),
                 };
                 let cpi_program = ctx.accounts.token_program.to_account_info();
-                let cpi_ctx =
-                    CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
+                let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
 
                 token::transfer(cpi_ctx, withdrawal.amount)?;
 
