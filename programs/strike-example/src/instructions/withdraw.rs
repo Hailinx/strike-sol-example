@@ -115,8 +115,7 @@ pub fn withdraw<'info>(
                     ErrorCode::InsufficientFunds
                 );
 
-                let vault_key = vault.key();
-                let seeds = &[b"vault", vault_key.as_ref(), &[vault.bump]];
+                let seeds = &[b"vault", vault.authority.as_ref(), &[vault.bump]];
                 let signer_seeds = &[&seeds[..]];
 
                 let cpi_accounts = Transfer {

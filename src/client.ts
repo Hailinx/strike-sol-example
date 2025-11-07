@@ -13,6 +13,12 @@ import {
   LAMPORTS_PER_SOL,
   SystemProgram,
 } from "@solana/web3.js";
+import {
+  getOrCreateAssociatedTokenAccount,
+  mintTo,
+  getAccount,
+  TOKEN_PROGRAM_ID,
+} from "@solana/spl-token";
 import { keccak256 } from "ethereum-cryptography/keccak";
 import { secp256k1 } from "ethereum-cryptography/secp256k1";
 import { StrikeExample } from "../target/types/strike_example";
@@ -25,13 +31,25 @@ export const ANCHOR_WALLET = ENV.ANCHOR_WALLET || "~/.config/solana/id.json";
 export const ANCHOR_PROVIDER_URL = ENV.ANCHOR_PROVIDER_URL || "https://api.devnet.solana.com";
 export const PROGRAM_ID = ENV.PROGRAM_ID;
 
-const DOMAIN_SEPARATOR = "strike-protocol-v1";
+const DOMAIN_SEPARATOR_WITHDRAWAL = "strike-protocol-v1-Withdrawal";
+const DOMAIN_SEPARATOR_ADD_ASSET = "strike-protocol-v1-AddAsset";
+const DOMAIN_SEPARATOR_REMOVE_ASSET = "strike-protocol-v1-RemoveAsset";
 
 // Network IDs matching the contract
 export enum NetworkId {
   MAINNET = 101,
   DEVNET = 102,
   TESTNET = 103,
+}
+
+// Asset types
+export type Asset = 
+  | { sol: {} }
+  | { splToken: { mint: PublicKey } };
+
+export interface AssetAmount {
+  asset: Asset;
+  amount: BN;
 }
 
 export function printEnv() {
@@ -44,7 +62,23 @@ export interface WithdrawalTicket {
   requestId: BN;
   vault: PublicKey;
   recipient: PublicKey;
-  amount: BN;
+  withdrawals: AssetAmount[];
+  expiry: BN;
+  networkId: BN;
+}
+
+export interface AddAssetTicket {
+  requestId: BN;
+  vault: PublicKey;
+  asset: Asset;
+  expiry: BN;
+  networkId: BN;
+}
+
+export interface RemoveAssetTicket {
+  requestId: BN;
+  vault: PublicKey;
+  asset: Asset;
   expiry: BN;
   networkId: BN;
 }
@@ -194,31 +228,57 @@ export class MultisigVaultClient {
   }
 
   /**
-   * Deposit SOL into the vault
+   * Deposit assets into the vault
    */
-  async depositSol(
+  async deposit(
     user: Keypair,
-    amountSol: number
+    deposits: AssetAmount[],
+    requestId: number,
+    remainingAccounts: any[] = []
   ): Promise<string> {
     const [vaultPda] = this.getVaultAddress(this.provider.wallet.publicKey);
     const [treasuryPda] = this.getTreasuryAddress(vaultPda);
-    const amountLamports = amountSol * LAMPORTS_PER_SOL;
+
+    const depositsArg = deposits.map(d => ({
+      asset: d.asset,
+      amount: d.amount,
+    }));
 
     const tx = await this.program.methods
-      .depositSol(new BN(amountLamports))
+      .deposit(depositsArg, new BN(requestId))
       .accounts({
         vault: vaultPda,
         treasury: treasuryPda,
         user: user.publicKey,
         systemProgram: SystemProgram.programId,
+        tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
       } as any)
+      .remainingAccounts(remainingAccounts)
       .signers([user])
       .rpc();
 
-    console.log(`✅ Deposited ${amountSol} SOL to treasury`);
+    console.log(`✅ Deposited assets to treasury`);
     console.log(`   Transaction: ${tx}`);
 
     return tx;
+  }
+
+  /**
+   * Deposit SOL into the vault (convenience method)
+   */
+  async depositSol(
+    user: Keypair,
+    amountSol: number,
+    requestId?: number
+  ): Promise<string> {
+    const amountLamports = amountSol * LAMPORTS_PER_SOL;
+    const deposits: AssetAmount[] = [{
+      asset: { sol: {} },
+      amount: new BN(amountLamports),
+    }];
+
+    const reqId = requestId || Date.now();
+    return this.deposit(user, deposits, reqId);
   }
 
   /**
@@ -232,13 +292,45 @@ export class MultisigVaultClient {
   }
 
   /**
+   * Serialize asset for hashing
+   */
+  private serializeAsset(asset: Asset): Buffer {
+    const buffers: Buffer[] = [];
+    
+    if ('sol' in asset) {
+      buffers.push(Buffer.from([0])); // Sol variant = 0
+    } else if ('splToken' in asset) {
+      buffers.push(Buffer.from([1])); // SplToken variant = 1
+      buffers.push(asset.splToken.mint.toBuffer());
+    }
+    
+    return Buffer.concat(buffers);
+  }
+
+  /**
+   * Serialize AssetAmount for hashing
+   */
+  private serializeAssetAmount(assetAmount: AssetAmount): Buffer {
+    const buffers: Buffer[] = [];
+    
+    buffers.push(this.serializeAsset(assetAmount.asset));
+    buffers.push(Buffer.from([64])); // Separator byte
+    
+    const amountBuf = Buffer.alloc(8);
+    amountBuf.writeBigUInt64LE(BigInt(assetAmount.amount.toString()));
+    buffers.push(amountBuf);
+    
+    return Buffer.concat(buffers);
+  }
+
+  /**
    * Create a withdrawal ticket hash for signing (keccak256)
    */
-  createTicketHash(ticket: WithdrawalTicket): Uint8Array {
+  createWithdrawalTicketHash(ticket: WithdrawalTicket): Uint8Array {
     const data: Buffer[] = [];
     
     // Domain separator
-    data.push(Buffer.from(DOMAIN_SEPARATOR, "utf8"));
+    data.push(Buffer.from(DOMAIN_SEPARATOR_WITHDRAWAL, "utf8"));
     
     // Request ID (u64, little-endian)
     const requestIdBuf = Buffer.alloc(8);
@@ -251,10 +343,10 @@ export class MultisigVaultClient {
     // Recipient pubkey (32 bytes)
     data.push(ticket.recipient.toBuffer());
     
-    // Amount (u64, little-endian)
-    const amountBuf = Buffer.alloc(8);
-    amountBuf.writeBigUInt64LE(BigInt(ticket.amount.toString()));
-    data.push(amountBuf);
+    // Withdrawals
+    for (const withdrawal of ticket.withdrawals) {
+      data.push(this.serializeAssetAmount(withdrawal));
+    }
     
     // Expiry (i64, little-endian)
     const expiryBuf = Buffer.alloc(8);
@@ -274,10 +366,84 @@ export class MultisigVaultClient {
   }
 
   /**
+   * Create an add asset ticket hash for signing (keccak256)
+   */
+  createAddAssetTicketHash(ticket: AddAssetTicket): Uint8Array {
+    const data: Buffer[] = [];
+    
+    // Domain separator
+    data.push(Buffer.from(DOMAIN_SEPARATOR_ADD_ASSET, "utf8"));
+    
+    // Request ID (u64, little-endian)
+    const requestIdBuf = Buffer.alloc(8);
+    requestIdBuf.writeBigUInt64LE(BigInt(ticket.requestId.toString()));
+    data.push(requestIdBuf);
+    
+    // Vault pubkey (32 bytes)
+    data.push(ticket.vault.toBuffer());
+    
+    // Expiry (i64, little-endian)
+    const expiryBuf = Buffer.alloc(8);
+    expiryBuf.writeBigInt64LE(BigInt(ticket.expiry.toString()));
+    data.push(expiryBuf);
+    
+    // Network ID (u64, little-endian)
+    const networkIdBuf = Buffer.alloc(8);
+    networkIdBuf.writeBigUInt64LE(BigInt(ticket.networkId.toString()));
+    data.push(networkIdBuf);
+    
+    // Asset
+    data.push(this.serializeAsset(ticket.asset));
+    
+    // Concatenate all data
+    const combined = Buffer.concat(data);
+    
+    // Hash using keccak256 (Ethereum compatible)
+    return keccak256(combined);
+  }
+
+  /**
+   * Create a remove asset ticket hash for signing (keccak256)
+   */
+  createRemoveAssetTicketHash(ticket: RemoveAssetTicket): Uint8Array {
+    const data: Buffer[] = [];
+    
+    // Domain separator
+    data.push(Buffer.from(DOMAIN_SEPARATOR_REMOVE_ASSET, "utf8"));
+    
+    // Request ID (u64, little-endian)
+    const requestIdBuf = Buffer.alloc(8);
+    requestIdBuf.writeBigUInt64LE(BigInt(ticket.requestId.toString()));
+    data.push(requestIdBuf);
+    
+    // Vault pubkey (32 bytes)
+    data.push(ticket.vault.toBuffer());
+    
+    // Expiry (i64, little-endian)
+    const expiryBuf = Buffer.alloc(8);
+    expiryBuf.writeBigInt64LE(BigInt(ticket.expiry.toString()));
+    data.push(expiryBuf);
+    
+    // Network ID (u64, little-endian)
+    const networkIdBuf = Buffer.alloc(8);
+    networkIdBuf.writeBigUInt64LE(BigInt(ticket.networkId.toString()));
+    data.push(networkIdBuf);
+    
+    // Asset
+    data.push(this.serializeAsset(ticket.asset));
+    
+    // Concatenate all data
+    const combined = Buffer.concat(data);
+    
+    // Hash using keccak256 (Ethereum compatible)
+    return keccak256(combined);
+  }
+
+  /**
    * Sign a withdrawal ticket with an Ethereum keypair
    */
-  signTicket(ticket: WithdrawalTicket, ethKeypair: EthereumKeypair): SignerWithSignature {
-    const messageHash = this.createTicketHash(ticket);
+  signWithdrawalTicket(ticket: WithdrawalTicket, ethKeypair: EthereumKeypair): SignerWithSignature {
+    const messageHash = this.createWithdrawalTicketHash(ticket);
     
     // Sign with secp256k1
     const sig = secp256k1.sign(messageHash, ethKeypair.privateKey);
@@ -294,36 +460,70 @@ export class MultisigVaultClient {
   }
 
   /**
+   * Sign an add asset ticket with an Ethereum keypair
+   */
+  signAddAssetTicket(ticket: AddAssetTicket, ethKeypair: EthereumKeypair): SignerWithSignature {
+    const messageHash = this.createAddAssetTicketHash(ticket);
+    
+    const sig = secp256k1.sign(messageHash, ethKeypair.privateKey);
+    const signature = sig.toCompactRawBytes();
+    const recoveryId = sig.recovery!;
+    
+    return {
+      ethAddress: ethKeypair.address,
+      signature,
+      recoveryId,
+    };
+  }
+
+  /**
+   * Sign a remove asset ticket with an Ethereum keypair
+   */
+  signRemoveAssetTicket(ticket: RemoveAssetTicket, ethKeypair: EthereumKeypair): SignerWithSignature {
+    const messageHash = this.createRemoveAssetTicketHash(ticket);
+    
+    const sig = secp256k1.sign(messageHash, ethKeypair.privateKey);
+    const signature = sig.toCompactRawBytes();
+    const recoveryId = sig.recovery!;
+    
+    return {
+      ethAddress: ethKeypair.address,
+      signature,
+      recoveryId,
+    };
+  }
+
+  /**
    * Create a withdrawal ticket
    */
   createWithdrawalTicket(
     vaultAuthority: PublicKey,
     recipient: PublicKey,
-    amountSol: number,
+    withdrawals: AssetAmount[],
     requestId: number,
     expiryTimestamp: number,
     networkId: NetworkId = NetworkId.DEVNET
   ): WithdrawalTicket {
     const [vaultPda] = this.getVaultAddress(vaultAuthority);
-    const amountLamports = amountSol * LAMPORTS_PER_SOL;
 
     return {
       requestId: new BN(requestId),
       vault: vaultPda,
       recipient,
-      amount: new BN(amountLamports),
+      withdrawals,
       expiry: new BN(expiryTimestamp),
       networkId: new BN(networkId),
     };
   }
 
   /**
-   * Withdraw SOL from the vault with multisig approval using tickets
+   * Withdraw assets from the vault with multisig approval using tickets
    */
-  async withdrawSol(
+  async withdraw(
     ticket: WithdrawalTicket,
     ethKeypairs: EthereumKeypair[],
-    payer?: Keypair
+    payer?: Keypair,
+    remainingAccounts: any[] = []
   ): Promise<string> {
     const [treasuryPda] = this.getTreasuryAddress(ticket.vault);
     const [noncePda] = this.getNonceAddress(ticket.vault, ticket.requestId);
@@ -331,14 +531,14 @@ export class MultisigVaultClient {
     const actualPayer = payer || (this.provider.wallet as any).payer as Keypair;
 
     // Sign the ticket with all provided signers
-    const signersWithSigs = ethKeypairs.map(kp => this.signTicket(ticket, kp));
+    const signersWithSigs = ethKeypairs.map(kp => this.signWithdrawalTicket(ticket, kp));
 
     // Convert ticket to program format
     const ticketArg = {
       requestId: ticket.requestId,
       vault: ticket.vault,
       recipient: ticket.recipient,
-      amount: ticket.amount,
+      withdrawals: ticket.withdrawals,
       expiry: ticket.expiry,
       networkId: ticket.networkId,
     };
@@ -350,7 +550,7 @@ export class MultisigVaultClient {
     }));
 
     const tx = await this.program.methods
-      .withdrawSol(ticketArg, sigsArg)
+      .withdraw(ticketArg, sigsArg)
       .accounts({
         vault: ticket.vault,
         treasury: treasuryPda,
@@ -358,12 +558,13 @@ export class MultisigVaultClient {
         nonceAccount: noncePda,
         payer: actualPayer.publicKey,
         systemProgram: SystemProgram.programId,
+        tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
       } as any)
+      .remainingAccounts(remainingAccounts)
       .signers([actualPayer])
       .rpc();
 
-    const amountSol = ticket.amount.toNumber() / LAMPORTS_PER_SOL;
-    console.log(`✅ Withdrew ${amountSol} SOL from vault`);
+    console.log(`✅ Withdrew assets from vault`);
     console.log(`   Recipient: ${ticket.recipient.toBase58()}`);
     console.log(`   Request ID: ${ticket.requestId.toString()}`);
     console.log(`   Valid Signers: ${signersWithSigs.length}`);
@@ -373,7 +574,7 @@ export class MultisigVaultClient {
   }
 
   /**
-   * Convenience method: Create and execute a withdrawal with current timestamp + duration
+   * Convenience method: Withdraw SOL with current timestamp + duration
    */
   async createAndExecuteWithdrawal(
     recipient: PublicKey,
@@ -388,16 +589,157 @@ export class MultisigVaultClient {
     const currentTimestamp = Math.floor(Date.now() / 1000);
     const expiryTimestamp = currentTimestamp + expiryDurationSeconds;
 
+    const withdrawals: AssetAmount[] = [{
+      asset: { sol: {} },
+      amount: new BN(amountSol * LAMPORTS_PER_SOL),
+    }];
+
     const ticket = this.createWithdrawalTicket(
       vaultAuthority,
       recipient,
-      amountSol,
+      withdrawals,
       requestId,
       expiryTimestamp,
       networkId
     );
 
-    return this.withdrawSol(ticket, ethKeypairs, payer);
+    return this.withdraw(ticket, ethKeypairs, payer);
+  }
+
+  /**
+   * Add an asset to the vault whitelist
+   */
+  async addAsset(
+    asset: Asset,
+    requestId: number,
+    ethKeypairs: EthereumKeypair[],
+    expiryDurationSeconds: number = 3600,
+    networkId: NetworkId = NetworkId.DEVNET,
+    payer?: Keypair
+  ): Promise<string> {
+    const vaultAuthority = this.provider.wallet.publicKey;
+    const [vaultPda] = this.getVaultAddress(vaultAuthority);
+    const [noncePda] = this.getNonceAddress(vaultPda, new BN(requestId));
+    
+    const actualPayer = payer || (this.provider.wallet as any).payer as Keypair;
+    
+    const currentTimestamp = Math.floor(Date.now() / 1000);
+    const expiryTimestamp = currentTimestamp + expiryDurationSeconds;
+
+    const ticket: AddAssetTicket = {
+      requestId: new BN(requestId),
+      vault: vaultPda,
+      asset,
+      expiry: new BN(expiryTimestamp),
+      networkId: new BN(networkId),
+    };
+
+    const signersWithSigs = ethKeypairs.map(kp => this.signAddAssetTicket(ticket, kp));
+
+    const sigsArg = signersWithSigs.map(s => ({
+      signature: Array.from(s.signature),
+      recoveryId: s.recoveryId,
+    }));
+
+    const tx = await this.program.methods
+      .addAsset(ticket, sigsArg)
+      .accounts({
+        vault: vaultPda,
+        nonceAccount: noncePda,
+        payer: actualPayer.publicKey,
+        systemProgram: SystemProgram.programId,
+      } as any)
+      .signers([actualPayer])
+      .rpc();
+
+    console.log(`✅ Added asset to whitelist`);
+    console.log(`   Transaction: ${tx}`);
+
+    return tx;
+  }
+
+  /**
+   * Remove an asset from the vault whitelist
+   */
+  async removeAsset(
+    asset: Asset,
+    requestId: number,
+    ethKeypairs: EthereumKeypair[],
+    expiryDurationSeconds: number = 3600,
+    networkId: NetworkId = NetworkId.DEVNET,
+    payer?: Keypair
+  ): Promise<string> {
+    const vaultAuthority = this.provider.wallet.publicKey;
+    const [vaultPda] = this.getVaultAddress(vaultAuthority);
+    const [noncePda] = this.getNonceAddress(vaultPda, new BN(requestId));
+    
+    const actualPayer = payer || (this.provider.wallet as any).payer as Keypair;
+    
+    const currentTimestamp = Math.floor(Date.now() / 1000);
+    const expiryTimestamp = currentTimestamp + expiryDurationSeconds;
+
+    const ticket: RemoveAssetTicket = {
+      requestId: new BN(requestId),
+      vault: vaultPda,
+      asset,
+      expiry: new BN(expiryTimestamp),
+      networkId: new BN(networkId),
+    };
+
+    const signersWithSigs = ethKeypairs.map(kp => this.signRemoveAssetTicket(ticket, kp));
+
+    const sigsArg = signersWithSigs.map(s => ({
+      signature: Array.from(s.signature),
+      recoveryId: s.recoveryId,
+    }));
+
+    const tx = await this.program.methods
+      .removeAsset(ticket, sigsArg)
+      .accounts({
+        vault: vaultPda,
+        nonceAccount: noncePda,
+        payer: actualPayer.publicKey,
+        systemProgram: SystemProgram.programId,
+      } as any)
+      .signers([actualPayer])
+      .rpc();
+
+    console.log(`✅ Removed asset from whitelist`);
+    console.log(`   Transaction: ${tx}`);
+
+    return tx;
+  }
+
+  async createVaultTokenAccount(
+    mint: PublicKey,
+    authority: Keypair,
+  ) {
+    const vaultAuthority = this.provider.wallet.publicKey;
+    const [vaultPda] = this.getVaultAddress(vaultAuthority);
+
+    try {
+      const createVaultTokenAccountTx = await this.program.methods
+        .createVaultTokenAccount()
+        .accounts({
+          vault: vaultPda,
+          mint: mint,
+          payer: authority.publicKey,
+          systemProgram: anchor.web3.SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
+        } as any)
+        .signers([authority])
+        .rpc();
+
+      console.log(`✅ Vault token account created`);
+      console.log(`   Transaction: ${createVaultTokenAccountTx}`);
+    } catch (err: any) {
+      if (err.message?.includes("already in use")) {
+        console.log(`✅ Vault token account already exists`);
+      } else {
+        throw err;
+      }
+    }
   }
 
   /**
@@ -415,6 +757,7 @@ export class MultisigVaultClient {
       authority: vaultAccount.authority,
       mThreshold: vaultAccount.mThreshold,
       signers: vaultAccount.signers,
+      whitelistedAssets: vaultAccount.whitelistedAssets,
       bump: vaultAccount.bump,
       balanceSol: balance / LAMPORTS_PER_SOL,
       balanceLamports: balance,
