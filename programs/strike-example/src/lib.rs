@@ -17,15 +17,39 @@ pub mod strike_example {
         instructions::initialize(ctx, m_threshold, signers)
     }
 
-    pub fn deposit_sol(ctx: Context<DepositSol>, amount: u64) -> Result<()> {
-        instructions::deposit_sol(ctx, amount)
+    pub fn deposit<'info>(
+        ctx: Context<'_, '_, 'info, 'info, Deposit<'info>>,
+        deposits: Vec<AssetAmount>,
+        request_id: u64,
+    ) -> Result<()> {
+        instructions::deposit(ctx, deposits, request_id)
     }
 
-    pub fn withdraw_sol(
-        ctx: Context<WithdrawSol>,
+    pub fn withdraw<'info>(
+        ctx: Context<'_, '_, 'info, 'info, Withdraw<'info>>,
         ticket: WithdrawalTicket,
         signers_with_sigs: Vec<SignerWithSignature>,
     ) -> Result<()> {
-        instructions::withdraw_sol(ctx, ticket, signers_with_sigs)
+        instructions::withdraw(ctx, ticket, signers_with_sigs)
+    }
+
+    pub fn add_asset(
+        ctx: Context<AddAsset>,
+        ticket: AddAssetTicket,
+        signers_with_sigs: Vec<SignerWithSignature>,
+    ) -> Result<()> {
+        instructions::add_asset(ctx, ticket, signers_with_sigs)
+    }
+
+    pub fn remove_asset(
+        ctx: Context<AddAsset>,
+        ticket: RemoveAssetTicket,
+        signers_with_sigs: Vec<SignerWithSignature>,
+    ) -> Result<()> {
+        instructions::remove_asset(ctx, ticket, signers_with_sigs)
+    }
+
+    pub fn create_vault_token_account(ctx: Context<CreateVaultTokenAccount>) -> Result<()> {
+        instructions::create_vault_token_account(ctx)
     }
 }

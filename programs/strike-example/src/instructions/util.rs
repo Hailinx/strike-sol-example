@@ -10,6 +10,7 @@ use super::models::{SignerWithSignature, Ticket};
 pub fn validate_sigs(
     ticket: &dyn Ticket,
     signers_with_sigs: &Vec<SignerWithSignature>,
+    real_signers: &Vec<[u8; 20]>,
 ) -> HashSet<[u8; 20]> {
     let message_hash = ticket.hash();
 
@@ -17,7 +18,9 @@ pub fn validate_sigs(
     for signer_sig in signers_with_sigs.iter() {
         match recover_eth_address(&message_hash, &signer_sig.signature, signer_sig.recovery_id) {
             Ok(recovered_address) => {
-                valid_signers.insert(recovered_address);
+                if real_signers.contains(&recovered_address) {
+                    valid_signers.insert(recovered_address);
+                }
             }
             Err(_) => continue,
         }

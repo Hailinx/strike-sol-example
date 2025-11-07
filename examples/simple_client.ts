@@ -1,4 +1,5 @@
 import { Keypair } from "@solana/web3.js";
+import BN from "bn.js";
 
 import {
   setupClient, 
@@ -7,6 +8,7 @@ import {
   ANCHOR_PROVIDER_URL, 
   printEnv,
   NetworkId,
+  AssetAmount,
 } from "../src/client";
 import { loadOrCreateEthKeypairs } from "./key_loader";
 
@@ -38,24 +40,6 @@ async function main() {
     console.log(`  [${i}] ${addressHex}`);
   }
 
-  try {
-    const vaultData = await client.getVaultData(authority.publicKey);
-    console.log(`\nVault exists: ${vaultData.address.toBase58()}`);
-    console.log(`  M-of-N: ${vaultData.mThreshold} of ${vaultData.signers.length}`);
-    console.log(`  Treasury Balance: ${vaultData.balanceSol} SOL`);
-  } catch {
-    console.log(`\nInitializing new vault with M=${M}, N=${N}...`);
-    const { vaultAddress } = await client.initializeForSelf(M, ethAddresses);
-    console.log(`Vault created: ${vaultAddress.toBase58()}`);
-  }
-
-  console.log(`\nDepositing 1.0 SOL...`);
-  await client.depositSolFromSelf(1.0);
-
-  const amountSol = 0.5;
-  const requestId = Date.now(); // Use timestamp as unique request ID
-  const expiryDurationSeconds = 3600; // 1 hour
-
   // Determine network ID based on provider URL
   let networkId = NetworkId.DEVNET;
   if (ANCHOR_PROVIDER_URL.includes("mainnet")) {
@@ -64,6 +48,41 @@ async function main() {
     networkId = NetworkId.TESTNET;
   }
 
+  try {
+    const vaultData = await client.getVaultData(authority.publicKey);
+    console.log(`\nVault exists: ${vaultData.address.toBase58()}`);
+    console.log(`  M-of-N: ${vaultData.mThreshold} of ${vaultData.signers.length}`);
+    console.log(`  Treasury Balance: ${vaultData.balanceSol} SOL`);
+    console.log(`  Whitelisted Assets: ${vaultData.whitelistedAssets.length}`);
+  } catch {
+    console.log(`\nInitializing new vault with M=${M}, N=${N}...`);
+    const { vaultAddress } = await client.initializeForSelf(M, ethAddresses);
+    console.log(`Vault created: ${vaultAddress.toBase58()}`);
+  }
+
+  // Add SOL to whitelist
+  console.log(`\nAdding SOL to whitelist...`);
+  await client.addAsset(
+    { sol: {} },
+    Date.now(),
+    [ethSigners[0], ethSigners[1], ethSigners[2]], // M signatures
+    3600,
+    networkId
+  );
+
+  // Deposit SOL
+  console.log(`\nDepositing 1.0 SOL...`);
+  await client.depositSolFromSelf(1.0);
+
+  // Check balance
+  const balance = await client.getTreasuryBalance(authority.publicKey);
+  console.log(`Treasury balance: ${balance} SOL`);
+
+  // Create a withdrawal
+  const amountSol = 0.5;
+  const requestId = Date.now(); // Use timestamp as unique request ID
+  const expiryDurationSeconds = 3600; // 1 hour
+
   // Create a new Solana recipient keypair for the withdrawal
   const recipient = Keypair.generate();
   console.log(`\nRecipient: ${recipient.publicKey.toBase58()}`);
@@ -71,16 +90,34 @@ async function main() {
   console.log(`\nExecuting withdrawal with M=${M} signatures...`);
   console.log(`  Amount: ${amountSol} SOL`);
   console.log(`  Request ID: ${requestId}`);
-  console.log(`  Using signers [1] and [2]`);
+  console.log(`  Using signers [0], [1], and [2]`);
 
-  await client.createAndExecuteWithdrawal(
+  // Withdraw using the multi-asset interface
+  const withdrawals: AssetAmount[] = [{
+    asset: { sol: {} },
+    amount: new BN(amountSol * 1_000_000_000), // Convert to lamports
+  }];
+
+  const currentTimestamp = Math.floor(Date.now() / 1000);
+  const expiryTimestamp = currentTimestamp + expiryDurationSeconds;
+
+  const withdrawalTicket = client.createWithdrawalTicket(
+    authority.publicKey,
     recipient.publicKey,
-    amountSol,
+    withdrawals,
     requestId,
-    [ethSigners[1], ethSigners[2], ethSigners[3]], // Provide M signatures
-    expiryDurationSeconds,
+    expiryTimestamp,
     networkId
   );
+
+  await client.withdraw(
+    withdrawalTicket,
+    [ethSigners[0], ethSigners[1], ethSigners[2]] // Provide M signatures
+  );
+
+  // Check final balance
+  const finalBalance = await client.getTreasuryBalance(authority.publicKey);
+  console.log(`\nFinal treasury balance: ${finalBalance} SOL`);
 }
 
 main().catch(console.error);
