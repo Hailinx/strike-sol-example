@@ -121,6 +121,42 @@ fn hash_asset_ticket(
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct RotateValidatorTicket {
+    pub request_id: u64,
+    pub vault: Pubkey,
+    pub signers: Vec<[u8; 20]>,
+    pub m_threshold: u8,
+    pub expiry: i64,
+    pub network_id: u64,
+}
+
+impl Ticket for RotateValidatorTicket {
+    fn separator(&self) -> &'static str {
+        "strike-protocol-v1-rotate"
+    }
+
+    fn hash(&self) -> [u8; 32] {
+        let mut data = Vec::new();
+        data.extend_from_slice(self.separator().as_bytes());
+
+        // Ticket fields
+        data.extend_from_slice(&self.request_id.to_le_bytes());
+        data.extend_from_slice(&self.vault.to_bytes());
+        for signer in self.signers.iter() {
+            data.push(55u8);
+            data.extend_from_slice(signer);
+            data.push(56u8);
+        }
+        data.extend_from_slice(&self.m_threshold.to_le_bytes());
+        data.extend_from_slice(&self.expiry.to_le_bytes());
+        data.extend_from_slice(&self.network_id.to_le_bytes());
+
+        let hash_result = keccak::hash(&data);
+        hash_result.to_bytes()
+    }
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct WithdrawalTicket {
     pub request_id: u64,
     pub vault: Pubkey,

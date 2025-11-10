@@ -52,4 +52,12 @@ pub mod strike_example {
     pub fn create_vault_token_account(ctx: Context<CreateVaultTokenAccount>) -> Result<()> {
         instructions::create_vault_token_account(ctx)
     }
+
+    pub fn rotate_validators(
+        ctx: Context<RotateValidator>,
+        ticket: RotateValidatorTicket,
+        signers_with_sigs: Vec<SignerWithSignature>,
+    ) -> Result<()> {
+        instructions::rotate_validators(ctx, ticket, signers_with_sigs)
+    }
 }

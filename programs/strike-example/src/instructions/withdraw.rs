@@ -11,6 +11,11 @@ pub fn withdraw<'info>(
     ticket: WithdrawalTicket,
     signers_with_sigs: Vec<SignerWithSignature>,
 ) -> Result<()> {
+    require!(
+        !ticket.withdrawals.is_empty(),
+        ErrorCode::NoWithdrawalsProvided
+    );
+
     let vault = &mut ctx.accounts.vault;
     let clock = Clock::get()?;
 

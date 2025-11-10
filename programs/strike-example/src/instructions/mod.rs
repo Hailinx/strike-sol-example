@@ -1,5 +1,5 @@
 pub mod accounts;
-pub mod asset;
+pub mod admin;
 pub mod deposit;
 pub mod initialize;
 pub mod withdraw;
@@ -8,7 +8,7 @@ pub mod models;
 pub mod util;
 
 pub use accounts::*;
-pub use asset::*;
+pub use admin::*;
 pub use deposit::*;
 pub use initialize::*;
 pub use models::*;
@@ -32,8 +32,8 @@ pub mod errors {
         DuplicateSigner,
         #[msg("Not enough valid signatures from authorized signers")]
         InsufficientValidSignatures,
-        #[msg("Account is not a signer")]
-        AccountNotSigner,
+        #[msg("Unauthorized user")]
+        UnauthorizedUser,
         #[msg("Insufficient funds in treasury")]
         InsufficientFunds,
         #[msg("Invalid amount (must be > 0)")]
