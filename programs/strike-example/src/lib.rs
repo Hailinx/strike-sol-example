@@ -12,18 +12,28 @@ pub mod strike_example {
     pub fn initialize(
         ctx: Context<Initialize>,
         vault_seed: String,
+        network_id: u64,
         m_threshold: u8,
         signers: Vec<[u8; 20]>, // Ethereum addresses (20 bytes)
     ) -> Result<()> {
-        instructions::initialize(ctx, vault_seed, m_threshold, signers)
+        instructions::initialize(ctx, vault_seed, network_id, m_threshold, signers)
     }
 
     pub fn deposit<'info>(
         ctx: Context<'_, '_, 'info, 'info, Deposit<'info>>,
         deposits: Vec<AssetAmount>,
         request_id: u64,
+        metadata: Option<String>,
     ) -> Result<()> {
-        instructions::deposit(ctx, deposits, request_id)
+        instructions::deposit(ctx, deposits, request_id, metadata)
+    }
+
+    pub fn admin_deposit<'info>(
+        ctx: Context<'_, '_, 'info, 'info, AdminDeposit<'info>>,
+        ticket: AdminDepositTicket,
+        signers_with_sigs: Vec<SignerWithSignature>,
+    ) -> Result<()> {
+        instructions::admin_deposit(ctx, ticket, signers_with_sigs)
     }
 
     pub fn withdraw<'info>(

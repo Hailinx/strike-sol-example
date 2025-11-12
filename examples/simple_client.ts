@@ -39,14 +39,6 @@ async function main() {
     console.log(`  [${i}] ${addressHex}`);
   }
 
-  // Determine network ID based on provider URL
-  let networkId = NetworkId.DEVNET;
-  if (ANCHOR_PROVIDER_URL.includes("mainnet")) {
-    networkId = NetworkId.MAINNET;
-  } else if (ANCHOR_PROVIDER_URL.includes("testnet")) {
-    networkId = NetworkId.TESTNET;
-  }
-
   const vaultSeed = computeVaultSeed(ethAddresses, M);
   const client = setupAdminClient(authority, ANCHOR_PROVIDER_URL, vaultSeed);
 
@@ -69,12 +61,11 @@ async function main() {
     Date.now(),
     [...ethSigners], // all signatures
     3600,
-    networkId
   );
 
-  // Deposit SOL
+  // Deposit SOL from admin
   console.log(`\nDepositing 1.0 SOL...`);
-  await client.depositSol(1.0);
+  await client.createAndExecuteAdminDeposit(1.0, Date.now(), [ethSigners[1]]);
 
   // Check balance
   const balance = await client.getTreasuryBalance();
@@ -108,7 +99,6 @@ async function main() {
     withdrawals,
     requestId,
     expiryTimestamp,
-    networkId
   );
 
   await client.withdraw(

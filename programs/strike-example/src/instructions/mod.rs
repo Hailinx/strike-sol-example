@@ -1,5 +1,6 @@
 pub mod accounts;
 pub mod admin;
+pub mod admin_deposit;
 pub mod deposit;
 pub mod initialize;
 pub mod withdraw;
@@ -9,6 +10,7 @@ pub mod util;
 
 pub use accounts::*;
 pub use admin::*;
+pub use admin_deposit::*;
 pub use deposit::*;
 pub use initialize::*;
 pub use models::*;
@@ -48,6 +50,8 @@ pub mod errors {
         InvalidVault,
         #[msg("Invalid recipient in ticket")]
         InvalidRecipient,
+        #[msg("Invalid network")]
+        InvalidNetwork,
         #[msg("Insufficient signatures provided")]
         InsufficientSignatures,
         #[msg("Invalid secp256k1 signature")]
@@ -62,5 +66,7 @@ pub mod errors {
         NoWithdrawalsProvided,
         #[msg("Token account not found")]
         TokenAccountNotFound,
+        #[msg("Admin deposit should be signed")]
+        AdminDepositShouldBeSigned,
     }
 }

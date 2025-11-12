@@ -19,6 +19,7 @@ pub fn add_asset(
         &ticket,
         &signers_with_sigs,
         ticket.expiry,
+        ticket.network_id,
     )?;
 
     let nonce_account = &mut ctx.accounts.nonce_account;
@@ -60,6 +61,7 @@ pub fn remove_asset(
         &ticket,
         &signers_with_sigs,
         ticket.expiry,
+        ticket.network_id,
     )?;
 
     let nonce_account = &mut ctx.accounts.nonce_account;
@@ -137,6 +139,7 @@ pub fn rotate_validators(
         &ticket,
         &signers_with_sigs,
         ticket.expiry,
+        ticket.network_id,
     )?;
 
     let nonce_account = &mut ctx.accounts.nonce_account;
@@ -164,12 +167,17 @@ fn check_before_admin_update(
     ticket: &dyn Ticket,
     signers_with_sigs: &Vec<SignerWithSignature>,
     ticket_expire: i64,
+    ticket_network_id: u64,
 ) -> Result<()> {
     let clock = Clock::get()?;
 
     require!(
         clock.unix_timestamp <= ticket_expire,
         ErrorCode::TicketExpired
+    );
+    require!(
+        vault.network_id == ticket_network_id,
+        ErrorCode::InvalidNetwork
     );
     require!(
         signers_with_sigs.len() == vault.signers.len(),

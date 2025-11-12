@@ -48,14 +48,6 @@ async function main() {
     console.log(`  [${i}] ${addressHex}`);
   }
 
-  // Determine network ID
-  let networkId = NetworkId.DEVNET;
-  if (ANCHOR_PROVIDER_URL.includes("mainnet")) {
-    networkId = NetworkId.MAINNET;
-  } else if (ANCHOR_PROVIDER_URL.includes("testnet")) {
-    networkId = NetworkId.TESTNET;
-  }
-
   const vaultSeed = computeVaultSeed(ethAddresses, M);
   const client = setupAdminClient(authority, ANCHOR_PROVIDER_URL, vaultSeed);
   const connection = client.provider.connection;
@@ -99,7 +91,6 @@ async function main() {
     addAssetRequestId,
     [...ethSigners], // M signatures
     3600,
-    networkId
   );
   console.log(`✅ SPL token added to whitelist`);
 
@@ -205,7 +196,6 @@ async function main() {
     withdrawals,
     withdrawRequestId,
     expiryTimestamp,
-    networkId
   );
 
   const withdrawRemainingAccounts = [

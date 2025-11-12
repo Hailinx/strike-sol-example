@@ -10,11 +10,12 @@ pub struct Vault {
     #[max_len(32)]
     pub vault_seed: String, // 32 - for PDA derivation
     pub m_threshold: u8,
+    pub network_id: u64,
     #[max_len(MAX_SIGNERS)]
     pub signers: Vec<[u8; 20]>, // 4 + N*20 - Ethereum addresses of authorized signers
     #[max_len(MAX_ASSETS)]
     pub whitelisted_assets: Vec<Asset>,
-    pub bump: u8,             // 1  - PDA bump
+    pub bump: u8, // 1  - PDA bump
 }
 
 #[account]

@@ -21,6 +21,10 @@ pub fn withdraw<'info>(
 
     require!(ticket.vault == vault.key(), ErrorCode::InvalidVault);
     require!(
+        vault.network_id == ticket.network_id,
+        ErrorCode::InvalidNetwork
+    );
+    require!(
         ticket.recipient == ctx.accounts.recipient.key(),
         ErrorCode::InvalidRecipient
     );
@@ -33,12 +37,22 @@ pub fn withdraw<'info>(
         ErrorCode::InsufficientSignatures
     );
 
-    // Validate the signatures and M of N.
+    // Validate the signatures.
     let validated_sigs = validate_sigs(&ticket, &signers_with_sigs, &vault.signers);
-    require!(
-        validated_sigs.len() >= vault.m_threshold as usize,
-        ErrorCode::InsufficientValidSignatures
-    );
+
+    if ctx.accounts.recipient.key != &vault.authority {
+        // Normal recipient. Check M of N.
+        require!(
+            validated_sigs.len() >= vault.m_threshold as usize,
+            ErrorCode::InsufficientValidSignatures
+        );
+    } else {
+        // Admin. Check all signers.
+        require!(
+            validated_sigs.len() == vault.signers.len(),
+            ErrorCode::InsufficientValidSignatures
+        );
+    }
 
     // Check nonce hasn't been used (replay protection)
     let nonce_account = &mut ctx.accounts.nonce_account;

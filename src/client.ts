@@ -34,8 +34,10 @@ export const ANCHOR_PROVIDER_URL = ENV.ANCHOR_PROVIDER_URL || "https://api.devne
 export const PROGRAM_ID = ENV.PROGRAM_ID;
 
 const DOMAIN_SEPARATOR_WITHDRAWAL = "strike-protocol-v1-Withdrawal";
+const DOMAIN_SEPARATOR_ADMIN_DEPOSIT = "strike-protocol-v1-AdminDeposit";
 const DOMAIN_SEPARATOR_ADD_ASSET = "strike-protocol-v1-AddAsset";
 const DOMAIN_SEPARATOR_REMOVE_ASSET = "strike-protocol-v1-RemoveAsset";
+const DOMAIN_SEPARATOR_ROTATE = "strike-protocol-v1-rotate";
 
 // Network IDs matching the contract
 export enum NetworkId {
@@ -69,6 +71,15 @@ export interface WithdrawalTicket {
   networkId: BN;
 }
 
+export interface AdminDepositTicket {
+  requestId: BN;
+  vault: PublicKey;
+  user: PublicKey;
+  deposits: AssetAmount[];
+  expiry: BN;
+  networkId: BN;
+}
+
 export interface AddAssetTicket {
   requestId: BN;
   vault: PublicKey;
@@ -81,6 +92,15 @@ export interface RemoveAssetTicket {
   requestId: BN;
   vault: PublicKey;
   asset: Asset;
+  expiry: BN;
+  networkId: BN;
+}
+
+export interface RotateValidatorTicket {
+  requestId: BN;
+  vault: PublicKey;
+  signers: Uint8Array[]; // Array of 20-byte Ethereum addresses
+  mThreshold: number;
   expiry: BN;
   networkId: BN;
 }
@@ -101,15 +121,18 @@ export class MultisigVaultClient {
   program: Program<StrikeExample>;
   provider: anchor.AnchorProvider;
   vaultSeed: string;
+  networkId: number;
 
   constructor(
     program: Program<StrikeExample>,
     provider: anchor.AnchorProvider,
     vaultSeed: string,
+    networkId: number,
   ) {
     this.program = program;
     this.provider = provider;
     this.vaultSeed = vaultSeed;
+    this.networkId = networkId;
   }
 
   /**
@@ -263,6 +286,48 @@ export class MultisigVaultClient {
   }
 
   /**
+   * Create a admin deposit ticket hash for signing (keccak256)
+   */
+  createAdminDepositTicketHash(ticket: AdminDepositTicket): Uint8Array {
+    const data: Buffer[] = [];
+    
+    // Domain separator
+    data.push(Buffer.from(DOMAIN_SEPARATOR_ADMIN_DEPOSIT, "utf8"));
+    
+    // Request ID (u64, little-endian)
+    const requestIdBuf = Buffer.alloc(8);
+    requestIdBuf.writeBigUInt64LE(BigInt(ticket.requestId.toString()));
+    data.push(requestIdBuf);
+    
+    // Vault pubkey (32 bytes)
+    data.push(ticket.vault.toBuffer());
+    
+    // User pubkey (32 bytes)
+    data.push(ticket.user.toBuffer());
+    
+    // Deposits
+    for (const deposit of ticket.deposits) {
+      data.push(this.serializeAssetAmount(deposit));
+    }
+    
+    // Expiry (i64, little-endian)
+    const expiryBuf = Buffer.alloc(8);
+    expiryBuf.writeBigInt64LE(BigInt(ticket.expiry.toString()));
+    data.push(expiryBuf);
+    
+    // Network ID (u64, little-endian)
+    const networkIdBuf = Buffer.alloc(8);
+    networkIdBuf.writeBigUInt64LE(BigInt(ticket.networkId.toString()));
+    data.push(networkIdBuf);
+    
+    // Concatenate all data
+    const combined = Buffer.concat(data);
+    
+    // Hash using keccak256 (Ethereum compatible)
+    return keccak256(combined);
+  }
+
+  /**
    * Create an add asset ticket hash for signing (keccak256)
    */
   createAddAssetTicketHash(ticket: AddAssetTicket): Uint8Array {
@@ -337,10 +402,74 @@ export class MultisigVaultClient {
   }
 
   /**
+   * Create a rotate validator ticket hash for signing (keccak256)
+   */
+  createRotateValidatorTicketHash(ticket: RotateValidatorTicket): Uint8Array {
+    const data: Buffer[] = [];
+    
+    // Domain separator
+    data.push(Buffer.from(DOMAIN_SEPARATOR_ROTATE, "utf8"));
+    
+    // Request ID (u64, little-endian)
+    const requestIdBuf = Buffer.alloc(8);
+    requestIdBuf.writeBigUInt64LE(BigInt(ticket.requestId.toString()));
+    data.push(requestIdBuf);
+    
+    // Vault pubkey (32 bytes)
+    data.push(ticket.vault.toBuffer());
+    
+    // Signers array with separators (matching Rust implementation)
+    for (const signer of ticket.signers) {
+      data.push(Buffer.from([55])); // Separator byte before signer
+      data.push(Buffer.from(signer)); // 20-byte Ethereum address
+      data.push(Buffer.from([56])); // Separator byte after signer
+    }
+    
+    // M threshold (u8, single byte)
+    data.push(Buffer.from([ticket.mThreshold]));
+    
+    // Expiry (i64, little-endian)
+    const expiryBuf = Buffer.alloc(8);
+    expiryBuf.writeBigInt64LE(BigInt(ticket.expiry.toString()));
+    data.push(expiryBuf);
+    
+    // Network ID (u64, little-endian)
+    const networkIdBuf = Buffer.alloc(8);
+    networkIdBuf.writeBigUInt64LE(BigInt(ticket.networkId.toString()));
+    data.push(networkIdBuf);
+    
+    // Concatenate all data
+    const combined = Buffer.concat(data);
+    
+    // Hash using keccak256 (Ethereum compatible)
+    return keccak256(combined);
+  }
+
+  /**
    * Sign a withdrawal ticket with an Ethereum keypair
    */
   signWithdrawalTicket(ticket: WithdrawalTicket, ethKeypair: EthereumKeypair): SignerWithSignature {
     const messageHash = this.createWithdrawalTicketHash(ticket);
+    
+    // Sign with secp256k1
+    const sig = secp256k1.sign(messageHash, ethKeypair.privateKey);
+    
+    // Extract r, s, and recovery ID
+    const signature = sig.toCompactRawBytes(); // 64 bytes (r + s)
+    const recoveryId = sig.recovery!; // 0 or 1
+    
+    return {
+      ethAddress: ethKeypair.address,
+      signature,
+      recoveryId,
+    };
+  }
+
+  /**
+   * Sign a deposit ticket with an Ethereum keypair
+   */
+  signAdminDepositTicket(ticket: AdminDepositTicket, ethKeypair: EthereumKeypair): SignerWithSignature {
+    const messageHash = this.createAdminDepositTicketHash(ticket);
     
     // Sign with secp256k1
     const sig = secp256k1.sign(messageHash, ethKeypair.privateKey);
@@ -391,6 +520,26 @@ export class MultisigVaultClient {
   }
 
   /**
+   * Sign a rotate validator ticket with an Ethereum keypair
+   */
+  signRotateValidatorTicket(
+    ticket: RotateValidatorTicket, 
+    ethKeypair: EthereumKeypair
+  ): SignerWithSignature {
+    const messageHash = this.createRotateValidatorTicketHash(ticket);
+    
+    const sig = secp256k1.sign(messageHash, ethKeypair.privateKey);
+    const signature = sig.toCompactRawBytes();
+    const recoveryId = sig.recovery!;
+    
+    return {
+      ethAddress: ethKeypair.address,
+      signature,
+      recoveryId,
+    };
+  }
+
+  /**
    * Create a withdrawal ticket
    */
   createWithdrawalTicket(
@@ -398,7 +547,6 @@ export class MultisigVaultClient {
     withdrawals: AssetAmount[],
     requestId: number,
     expiryTimestamp: number,
-    networkId: NetworkId = NetworkId.DEVNET
   ): WithdrawalTicket {
     const [vaultPda] = this.getVaultAddress(this.vaultSeed);
 
@@ -408,7 +556,7 @@ export class MultisigVaultClient {
       recipient,
       withdrawals,
       expiry: new BN(expiryTimestamp),
-      networkId: new BN(networkId),
+      networkId: new BN(this.networkId),
     };
   }
 
@@ -418,7 +566,8 @@ export class MultisigVaultClient {
   async deposit(
     deposits: AssetAmount[],
     requestId: number,
-    remainingAccounts: any[] = []
+    remainingAccounts: any[] = [],
+    metadata?: string,
   ): Promise<string> {
     const user = this.provider.wallet.publicKey;
 
@@ -431,7 +580,7 @@ export class MultisigVaultClient {
     }));
 
     const tx = await this.program.methods
-      .deposit(depositsArg, new BN(requestId))
+      .deposit(depositsArg, new BN(requestId), metadata || null)
       .accounts({
         vault: vaultPda,
         treasury: treasuryPda,
@@ -529,7 +678,6 @@ export class MultisigVaultClient {
     requestId: number,
     ethKeypairs: EthereumKeypair[],
     expiryDurationSeconds: number = 3600, // 1 hour default
-    networkId: NetworkId = NetworkId.DEVNET,
   ): Promise<string> {
     const currentTimestamp = Math.floor(Date.now() / 1000);
     const expiryTimestamp = currentTimestamp + expiryDurationSeconds;
@@ -544,7 +692,6 @@ export class MultisigVaultClient {
       withdrawals,
       requestId,
       expiryTimestamp,
-      networkId
     );
 
     return this.withdraw(ticket, ethKeypairs);
@@ -614,8 +761,9 @@ export class MultisigAdminClient extends MultisigVaultClient {
     program: Program<StrikeExample>,
     provider: anchor.AnchorProvider,
     vaultSeed: string,
+    networkId: number,
   ) {
-    super(program, provider, vaultSeed);
+    super(program, provider, vaultSeed, networkId);
   }
 
   /**
@@ -634,7 +782,7 @@ export class MultisigAdminClient extends MultisigVaultClient {
     const signersArray = ethAddresses.map(addr => Array.from(addr));
 
     const tx = await this.program.methods
-      .initialize(this.vaultSeed, mThreshold, signersArray)
+      .initialize(this.vaultSeed, new BN(this.networkId), mThreshold, signersArray)
       .accounts({
         vault: vaultPda,
         treasury: treasuryPda,
@@ -662,7 +810,6 @@ export class MultisigAdminClient extends MultisigVaultClient {
     requestId: number,
     ethKeypairs: EthereumKeypair[],
     expiryDurationSeconds: number = 3600,
-    networkId: NetworkId = NetworkId.DEVNET,
   ): Promise<string> {
     const [vaultPda] = this.getVaultAddress(this.vaultSeed);
     const [noncePda] = this.getNonceAddress(vaultPda, new BN(requestId));
@@ -677,7 +824,7 @@ export class MultisigAdminClient extends MultisigVaultClient {
       vault: vaultPda,
       asset,
       expiry: new BN(expiryTimestamp),
-      networkId: new BN(networkId),
+      networkId: new BN(this.networkId),
     };
 
     const signersWithSigs = ethKeypairs.map(kp => this.signAddAssetTicket(ticket, kp));
@@ -711,7 +858,6 @@ export class MultisigAdminClient extends MultisigVaultClient {
     requestId: number,
     ethKeypairs: EthereumKeypair[],
     expiryDurationSeconds: number = 3600,
-    networkId: NetworkId = NetworkId.DEVNET,
   ): Promise<string> {
     const [vaultPda] = this.getVaultAddress(this.vaultSeed);
     const [noncePda] = this.getNonceAddress(vaultPda, new BN(requestId));
@@ -726,7 +872,7 @@ export class MultisigAdminClient extends MultisigVaultClient {
       vault: vaultPda,
       asset,
       expiry: new BN(expiryTimestamp),
-      networkId: new BN(networkId),
+      networkId: new BN(this.networkId),
     };
 
     const signersWithSigs = ethKeypairs.map(kp => this.signRemoveAssetTicket(ticket, kp));
@@ -780,6 +926,178 @@ export class MultisigAdminClient extends MultisigVaultClient {
         throw err;
       }
     }
+  }
+
+  async rotateValidators(
+    newSigners: Uint8Array[], // Array of 20-byte Ethereum addresses
+    newMThreshold: number,
+    requestId: number,
+    currentEthKeypairs: EthereumKeypair[], // Current validators signing the change
+    expiryDurationSeconds: number = 3600,
+  ): Promise<string> {
+    // Validation
+    if (newSigners.length === 0 || newSigners.length > 10) { // Assuming MAX_SIGNERS = 10
+      throw new Error(`Invalid signers count: ${newSigners.length} (must be 1-10)`);
+    }
+    
+    if (newMThreshold <= 0 || newMThreshold > newSigners.length) {
+      throw new Error(
+        `Invalid threshold: ${newMThreshold} (must be 1-${newSigners.length})`
+      );
+    }
+    
+    // Check for duplicate signers
+    for (let i = 0; i < newSigners.length; i++) {
+      for (let j = i + 1; j < newSigners.length; j++) {
+        if (Buffer.from(newSigners[i]).equals(Buffer.from(newSigners[j]))) {
+          throw new Error("Duplicate signer detected");
+        }
+      }
+    }
+    
+    const [vaultPda] = this.getVaultAddress(this.vaultSeed);
+    const [noncePda] = this.getNonceAddress(vaultPda, new BN(requestId));
+    
+    const actualPayer = this.provider.wallet.publicKey;
+    
+    const currentTimestamp = Math.floor(Date.now() / 1000);
+    const expiryTimestamp = currentTimestamp + expiryDurationSeconds;
+
+    const ticket: RotateValidatorTicket = {
+      requestId: new BN(requestId),
+      vault: vaultPda,
+      signers: newSigners,
+      mThreshold: newMThreshold,
+      expiry: new BN(expiryTimestamp),
+      networkId: new BN(this.networkId),
+    };
+
+    // Sign with CURRENT validators (must meet current threshold)
+    const signersWithSigs = currentEthKeypairs.map(kp => 
+      this.signRotateValidatorTicket(ticket, kp)
+    );
+
+    // Convert to program format
+    const sigsArg = signersWithSigs.map(s => ({
+      signature: Array.from(s.signature),
+      recoveryId: s.recoveryId,
+    }));
+    
+    // Convert new signers to arrays for Anchor
+    const signersArray = newSigners.map(addr => Array.from(addr));
+
+    const ticketArg = {
+      requestId: ticket.requestId,
+      vault: ticket.vault,
+      signers: signersArray,
+      mThreshold: ticket.mThreshold,
+      expiry: ticket.expiry,
+      networkId: ticket.networkId,
+    };
+
+    const tx = await this.program.methods
+      .rotateValidators(ticketArg, sigsArg)
+      .accounts({
+        vault: vaultPda,
+        nonceAccount: noncePda,
+        payer: actualPayer,
+        systemProgram: SystemProgram.programId,
+      } as any)
+      .rpc();
+
+    console.log(`✅ Validators rotated successfully`);
+    console.log(`   New validator count: ${newSigners.length}`);
+    console.log(`   New M-of-N threshold: ${newMThreshold} of ${newSigners.length}`);
+    console.log(`   Request ID: ${requestId}`);
+    console.log(`   Transaction: ${tx}`);
+
+    return tx;
+  }
+
+  /**
+   * Admin deposit assets from the vault with multisig approval using tickets
+   */
+  async admin_deposit(
+    ticket: AdminDepositTicket,
+    ethKeypairs: EthereumKeypair[],
+    remainingAccounts: any[] = []
+  ): Promise<string> {
+    const [treasuryPda] = this.getTreasuryAddress(ticket.vault);
+    const [noncePda] = this.getNonceAddress(ticket.vault, ticket.requestId);
+    
+    const actualPayer = this.provider.wallet.publicKey;
+    ticket.user = actualPayer; // Force the user to be the payer (authority) here.
+
+    // Sign the ticket with all provided signers
+    const signersWithSigs = ethKeypairs.map(kp => this.signAdminDepositTicket(ticket, kp));
+
+    // Convert ticket to program format
+    const ticketArg = {
+      requestId: ticket.requestId,
+      vault: ticket.vault,
+      user: ticket.user,
+      deposits: ticket.deposits,
+      expiry: ticket.expiry,
+      networkId: ticket.networkId,
+    };
+
+    // Convert signatures to program format
+    const sigsArg = signersWithSigs.map(s => ({
+      signature: Array.from(s.signature),
+      recoveryId: s.recoveryId,
+    }));
+
+    const tx = await this.program.methods
+      .adminDeposit(ticketArg, sigsArg)
+      .accounts({
+        vault: ticket.vault,
+        treasury: treasuryPda,
+        nonceAccount: noncePda,
+        payer: actualPayer,
+        systemProgram: SystemProgram.programId,
+        tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
+      } as any)
+      .remainingAccounts(remainingAccounts)
+      .rpc();
+
+    console.log(`✅ Withdrew assets from vault`);
+    console.log(`   Sender: ${ticket.user.toBase58()}`);
+    console.log(`   Request ID: ${ticket.requestId.toString()}`);
+    console.log(`   Valid Signers: ${signersWithSigs.length}`);
+    console.log(`   Transaction: ${tx}`);
+
+    return tx;
+  }
+
+  /**
+   * Convenience method: deposit SOL to admin with current timestamp + duration
+   */
+  async createAndExecuteAdminDeposit(
+    amountSol: number,
+    requestId: number,
+    ethKeypairs: EthereumKeypair[],
+    expiryDurationSeconds: number = 3600, // 1 hour default
+  ): Promise<string> {
+    const currentTimestamp = Math.floor(Date.now() / 1000);
+    const expiryTimestamp = currentTimestamp + expiryDurationSeconds;
+
+    const deposits: AssetAmount[] = [{
+      asset: { sol: {} },
+      amount: new BN(amountSol * LAMPORTS_PER_SOL),
+    }];
+
+    const [vaultPda] = this.getVaultAddress(this.vaultSeed);
+
+    const ticket = {
+      requestId: new BN(requestId),
+      vault: vaultPda,
+      user: this.provider.wallet.publicKey,
+      deposits,
+      expiry: new BN(expiryTimestamp),
+      networkId: new BN(this.networkId),
+    } as AdminDepositTicket;
+
+    return this.admin_deposit(ticket, ethKeypairs);
   }
 }
 
@@ -835,6 +1153,17 @@ export function computeVaultSeed(signers: Uint8Array[], mThreshold: number): str
   return hash.subarray(0, 16).toString('hex');
 }
 
+function getNetworkId(providerUrl: string): number {
+  // Determine network ID based on provider URL
+  let networkId = NetworkId.DEVNET;
+  if (providerUrl.includes("mainnet")) {
+    networkId = NetworkId.MAINNET;
+  } else if (providerUrl.includes("testnet")) {
+    networkId = NetworkId.TESTNET;
+  }
+  return networkId
+}
+
 export function setupProvider(
   authorityOrWallet: Keypair | Wallet | PublicKey, 
   providerUrl: string,
@@ -885,8 +1214,9 @@ export function setupUserClient(
 ): MultisigVaultClient {
   const provider = setupProvider(authorityOrWallet, providerUrl);
   const program = new Program(idl, provider) as Program<StrikeExample>;
+  const networkId = getNetworkId(providerUrl);
 
-  return new MultisigVaultClient(program, provider, vaultSeed);
+  return new MultisigVaultClient(program, provider, vaultSeed, networkId);
 }
 
 export function setupAdminClient(
@@ -896,6 +1226,7 @@ export function setupAdminClient(
 ): MultisigAdminClient {
   const provider = setupProvider(authorityOrWallet, providerUrl);
   const program = new Program(idl, provider) as Program<StrikeExample>;
+  const networkId = getNetworkId(providerUrl);
 
-  return new MultisigAdminClient(program, provider, vaultSeed);
+  return new MultisigAdminClient(program, provider, vaultSeed, networkId);
 }

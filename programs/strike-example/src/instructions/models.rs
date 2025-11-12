@@ -157,6 +157,40 @@ impl Ticket for RotateValidatorTicket {
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct AdminDepositTicket {
+    pub request_id: u64,
+    pub vault: Pubkey,
+    pub user: Pubkey,
+    pub deposits: Vec<AssetAmount>,
+    pub expiry: i64,     // Unix timestamp
+    pub network_id: u64, // Solana mainnet=101, devnet=102, testnet=103
+}
+
+impl Ticket for AdminDepositTicket {
+    fn separator(&self) -> &'static str {
+        "strike-protocol-v1-AdminDeposit"
+    }
+
+    fn hash(&self) -> [u8; 32] {
+        let mut data = Vec::new();
+        data.extend_from_slice(self.separator().as_bytes());
+
+        // Ticket fields
+        data.extend_from_slice(&self.request_id.to_le_bytes());
+        data.extend_from_slice(&self.vault.to_bytes());
+        data.extend_from_slice(&self.user.to_bytes());
+        for asset_amount in self.deposits.iter() {
+            asset_amount.add_to_data(&mut data);
+        }
+        data.extend_from_slice(&self.expiry.to_le_bytes());
+        data.extend_from_slice(&self.network_id.to_le_bytes());
+
+        let hash_result = keccak::hash(&data);
+        hash_result.to_bytes()
+    }
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct WithdrawalTicket {
     pub request_id: u64,
     pub vault: Pubkey,
