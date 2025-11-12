@@ -100,7 +100,7 @@ pub fn deposit<'info>(
 #[derive(Accounts)]
 pub struct Deposit<'info> {
     #[account(
-        seeds = [b"vault", vault.authority.as_ref()],
+        seeds = [b"vault", vault.vault_seed.as_bytes()],
         bump = vault.bump
     )]
     pub vault: Account<'info, Vault>,

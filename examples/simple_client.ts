@@ -2,7 +2,8 @@ import { Keypair } from "@solana/web3.js";
 import BN from "bn.js";
 
 import {
-  setupClient, 
+  setupAdminClient, 
+  computeVaultSeed,
   loadKeypairFromJson, 
   ANCHOR_WALLET, 
   ANCHOR_PROVIDER_URL, 
@@ -26,8 +27,6 @@ async function main() {
   }
   console.log(`Authority public key: ${authority.publicKey.toBase58()}`);
 
-  const client = setupClient(authority, ANCHOR_PROVIDER_URL);
-
   let M = 3, N = 5;
   const ethSigners = await loadOrCreateEthKeypairs(ETH_KEYS_PATH, N);
   N = ethSigners.length;
@@ -48,15 +47,18 @@ async function main() {
     networkId = NetworkId.TESTNET;
   }
 
+  const vaultSeed = computeVaultSeed(ethAddresses, M);
+  const client = setupAdminClient(authority, ANCHOR_PROVIDER_URL, vaultSeed);
+
   try {
-    const vaultData = await client.getVaultData(authority.publicKey);
+    const vaultData = await client.getVaultData();
     console.log(`\nVault exists: ${vaultData.address.toBase58()}`);
     console.log(`  M-of-N: ${vaultData.mThreshold} of ${vaultData.signers.length}`);
     console.log(`  Treasury Balance: ${vaultData.balanceSol} SOL`);
     console.log(`  Whitelisted Assets: ${vaultData.whitelistedAssets.length}`);
   } catch {
     console.log(`\nInitializing new vault with M=${M}, N=${N}...`);
-    const { vaultAddress } = await client.initializeForSelf(M, ethAddresses);
+    const { vaultAddress } = await client.initialize(M, ethAddresses);
     console.log(`Vault created: ${vaultAddress.toBase58()}`);
   }
 
@@ -65,17 +67,17 @@ async function main() {
   await client.addAsset(
     { sol: {} },
     Date.now(),
-    [ethSigners[0], ethSigners[1], ethSigners[2]], // M signatures
+    [...ethSigners], // all signatures
     3600,
     networkId
   );
 
   // Deposit SOL
   console.log(`\nDepositing 1.0 SOL...`);
-  await client.depositSolFromSelf(1.0);
+  await client.depositSol(1.0);
 
   // Check balance
-  const balance = await client.getTreasuryBalance(authority.publicKey);
+  const balance = await client.getTreasuryBalance();
   console.log(`Treasury balance: ${balance} SOL`);
 
   // Create a withdrawal
@@ -102,7 +104,6 @@ async function main() {
   const expiryTimestamp = currentTimestamp + expiryDurationSeconds;
 
   const withdrawalTicket = client.createWithdrawalTicket(
-    authority.publicKey,
     recipient.publicKey,
     withdrawals,
     requestId,
@@ -116,7 +117,7 @@ async function main() {
   );
 
   // Check final balance
-  const finalBalance = await client.getTreasuryBalance(authority.publicKey);
+  const finalBalance = await client.getTreasuryBalance();
   console.log(`\nFinal treasury balance: ${finalBalance} SOL`);
 }
 

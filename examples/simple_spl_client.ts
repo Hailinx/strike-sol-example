@@ -9,7 +9,8 @@ import {
 import BN from "bn.js";
 
 import {
-  setupClient,
+  setupAdminClient,
+  computeVaultSeed,
   loadKeypairFromJson,
   ANCHOR_WALLET,
   ANCHOR_PROVIDER_URL,
@@ -34,9 +35,6 @@ async function main() {
   }
   console.log(`Authority public key: ${authority.publicKey.toBase58()}`);
 
-  const client = setupClient(authority, ANCHOR_PROVIDER_URL);
-  const connection = client.provider.connection;
-
   // Setup Ethereum signers
   let M = 3, N = 5;
   const ethSigners = await loadOrCreateEthKeypairs(ETH_KEYS_PATH, N);
@@ -58,17 +56,21 @@ async function main() {
     networkId = NetworkId.TESTNET;
   }
 
+  const vaultSeed = computeVaultSeed(ethAddresses, M);
+  const client = setupAdminClient(authority, ANCHOR_PROVIDER_URL, vaultSeed);
+  const connection = client.provider.connection;
+
   // Initialize or get vault
-  const [vaultPda] = client.getVaultAddress(authority.publicKey);
+  const [vaultPda] = client.getVaultAddress(vaultSeed);
   try {
-    const vaultData = await client.getVaultData(authority.publicKey);
+    const vaultData = await client.getVaultData();
     console.log(`\nVault exists: ${vaultData.address.toBase58()}`);
     console.log(`  M-of-N: ${vaultData.mThreshold} of ${vaultData.signers.length}`);
     console.log(`  Treasury Balance: ${vaultData.balanceSol} SOL`);
     console.log(`  Whitelisted Assets: ${vaultData.whitelistedAssets.length}`);
   } catch {
     console.log(`\nInitializing new vault with M=${M}, N=${N}...`);
-    const { vaultAddress } = await client.initializeForSelf(M, ethAddresses);
+    const { vaultAddress } = await client.initialize(M, ethAddresses);
     console.log(`Vault created: ${vaultAddress.toBase58()}`);
   }
 
@@ -95,7 +97,7 @@ async function main() {
   await client.addAsset(
     { splToken: { mint } },
     addAssetRequestId,
-    [ethSigners[0], ethSigners[1], ethSigners[2]], // M signatures
+    [...ethSigners], // M signatures
     3600,
     networkId
   );
@@ -123,7 +125,7 @@ async function main() {
   console.log(`   User token account: ${userTokenAccount.address.toBase58()}`);
 
   console.log(`\n=== Step 4: Creating Vault Token Account ===`);
-  await client.createVaultTokenAccount(mint, authority);
+  await client.createVaultTokenAccount(mint);
 
   const vaultTokenAccount = await getOrCreateAssociatedTokenAccount(
     connection,
@@ -156,7 +158,7 @@ async function main() {
       isWritable: true,
     },
   ];
-  await client.deposit(authority, deposits, depositRequestId, depositRemainingAccounts);
+  await client.deposit(deposits, depositRequestId, depositRemainingAccounts);
 
   const vaultTokenAccountInfo = await getAccount(connection, vaultTokenAccount.address);
   console.log(
@@ -199,7 +201,6 @@ async function main() {
   const expiryTimestamp = currentTimestamp + expiryDurationSeconds;
 
   const withdrawalTicket = client.createWithdrawalTicket(
-    authority.publicKey,
     recipient.publicKey,
     withdrawals,
     withdrawRequestId,
@@ -227,7 +228,6 @@ async function main() {
   await client.withdraw(
     withdrawalTicket,
     [ethSigners[0], ethSigners[1], ethSigners[2]], // Provide M signatures
-    authority, // payer for nonce account
     withdrawRemainingAccounts
   );
 

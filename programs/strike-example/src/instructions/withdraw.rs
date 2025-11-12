@@ -120,7 +120,7 @@ pub fn withdraw<'info>(
                     ErrorCode::InsufficientFunds
                 );
 
-                let seeds = &[b"vault", vault.authority.as_ref(), &[vault.bump]];
+                let seeds = &[b"vault", vault.vault_seed.as_bytes(), &[vault.bump]];
                 let signer_seeds = &[&seeds[..]];
 
                 let cpi_accounts = Transfer {
@@ -152,7 +152,7 @@ pub fn withdraw<'info>(
 pub struct Withdraw<'info> {
     #[account(
         mut,
-        seeds = [b"vault", vault.authority.as_ref()],
+        seeds = [b"vault", vault.vault_seed.as_bytes()],
         bump = vault.bump
     )]
     pub vault: Account<'info, Vault>,

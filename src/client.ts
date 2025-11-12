@@ -2,14 +2,16 @@ import * as fs from "fs";
 import * as path from "path";
 import os from "os";
 import dotenv from "dotenv";
+import { createHash } from "crypto";
 
 import BN from "bn.js";
 import * as anchor from "@coral-xyz/anchor";
-import { Program, Wallet } from "@coral-xyz/anchor";
+import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
 import { 
   Keypair, 
   Connection, 
   PublicKey,
+  Transaction,
   LAMPORTS_PER_SOL,
   SystemProgram,
 } from "@solana/web3.js";
@@ -98,13 +100,16 @@ export interface SignerWithSignature {
 export class MultisigVaultClient {
   program: Program<StrikeExample>;
   provider: anchor.AnchorProvider;
+  vaultSeed: string;
 
   constructor(
     program: Program<StrikeExample>,
-    provider: anchor.AnchorProvider
+    provider: anchor.AnchorProvider,
+    vaultSeed: string,
   ) {
     this.program = program;
     this.provider = provider;
+    this.vaultSeed = vaultSeed;
   }
 
   /**
@@ -150,9 +155,12 @@ export class MultisigVaultClient {
   /**
    * Derive the vault PDA address
    */
-  getVaultAddress(authority: PublicKey): [PublicKey, number] {
+  getVaultAddress(vaultSeed: string): [PublicKey, number] {
+    if (!vaultSeed || vaultSeed.length === 0 || vaultSeed.length > 32) {
+      throw new Error('Vault seed must be between 1 and 32 characters');
+    }
     return PublicKey.findProgramAddressSync(
-      [Buffer.from("vault"), authority.toBuffer()],
+      [Buffer.from("vault"), Buffer.from(vaultSeed, 'utf-8')],
       this.program.programId
     );
   }
@@ -178,117 +186,6 @@ export class MultisigVaultClient {
       [Buffer.from("nonce"), vaultPda.toBuffer(), requestIdBuffer],
       this.program.programId
     );
-  }
-
-  /**
-   * Initialize a new multisig vault with Ethereum addresses
-   */
-  async initialize(
-    authority: Keypair,
-    mThreshold: number,
-    ethAddresses: Uint8Array[] // Array of 20-byte Ethereum addresses
-  ): Promise<{ signature: string; vaultAddress: PublicKey }> {
-    const [vaultPda] = this.getVaultAddress(authority.publicKey);
-    const [treasuryPda] = this.getTreasuryAddress(vaultPda);
-
-    // Convert to arrays for Anchor
-    const signersArray = ethAddresses.map(addr => Array.from(addr));
-
-    const tx = await this.program.methods
-      .initialize(mThreshold, signersArray)
-      .accounts({
-        vault: vaultPda,
-        treasury: treasuryPda,
-        authority: authority.publicKey,
-        systemProgram: SystemProgram.programId,
-      } as any)
-      .signers([authority])
-      .rpc();
-
-    console.log(`✅ Vault initialized: ${vaultPda.toBase58()}`);
-    console.log(`   Treasury: ${treasuryPda.toBase58()}`);
-    console.log(`   Transaction: ${tx}`);
-    console.log(`   M-of-N: ${mThreshold} of ${ethAddresses.length}`);
-
-    return {
-      signature: tx,
-      vaultAddress: vaultPda,
-    };
-  }
-
-  /**
-   * Initialize a new multisig vault with self as authority.
-   */
-  async initializeForSelf(
-    mThreshold: number,
-    ethAddresses: Uint8Array[]
-  ): Promise<{ signature: string; vaultAddress: PublicKey }> {
-    const authority = (this.provider.wallet as any).payer as Keypair;
-    return this.initialize(authority, mThreshold, ethAddresses);
-  }
-
-  /**
-   * Deposit assets into the vault
-   */
-  async deposit(
-    user: Keypair,
-    deposits: AssetAmount[],
-    requestId: number,
-    remainingAccounts: any[] = []
-  ): Promise<string> {
-    const [vaultPda] = this.getVaultAddress(this.provider.wallet.publicKey);
-    const [treasuryPda] = this.getTreasuryAddress(vaultPda);
-
-    const depositsArg = deposits.map(d => ({
-      asset: d.asset,
-      amount: d.amount,
-    }));
-
-    const tx = await this.program.methods
-      .deposit(depositsArg, new BN(requestId))
-      .accounts({
-        vault: vaultPda,
-        treasury: treasuryPda,
-        user: user.publicKey,
-        systemProgram: SystemProgram.programId,
-        tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
-      } as any)
-      .remainingAccounts(remainingAccounts)
-      .signers([user])
-      .rpc();
-
-    console.log(`✅ Deposited assets to treasury`);
-    console.log(`   Transaction: ${tx}`);
-
-    return tx;
-  }
-
-  /**
-   * Deposit SOL into the vault (convenience method)
-   */
-  async depositSol(
-    user: Keypair,
-    amountSol: number,
-    requestId?: number
-  ): Promise<string> {
-    const amountLamports = amountSol * LAMPORTS_PER_SOL;
-    const deposits: AssetAmount[] = [{
-      asset: { sol: {} },
-      amount: new BN(amountLamports),
-    }];
-
-    const reqId = requestId || Date.now();
-    return this.deposit(user, deposits, reqId);
-  }
-
-  /**
-   * Deposit SOL into the vault from myself.
-   */
-  async depositSolFromSelf(
-    amountSol: number
-  ): Promise<string> {
-    const user = (this.provider.wallet as any).payer as Keypair;
-    return this.depositSol(user, amountSol);
   }
 
   /**
@@ -497,14 +394,13 @@ export class MultisigVaultClient {
    * Create a withdrawal ticket
    */
   createWithdrawalTicket(
-    vaultAuthority: PublicKey,
     recipient: PublicKey,
     withdrawals: AssetAmount[],
     requestId: number,
     expiryTimestamp: number,
     networkId: NetworkId = NetworkId.DEVNET
   ): WithdrawalTicket {
-    const [vaultPda] = this.getVaultAddress(vaultAuthority);
+    const [vaultPda] = this.getVaultAddress(this.vaultSeed);
 
     return {
       requestId: new BN(requestId),
@@ -517,18 +413,70 @@ export class MultisigVaultClient {
   }
 
   /**
+   * Deposit assets into the vault
+   */
+  async deposit(
+    deposits: AssetAmount[],
+    requestId: number,
+    remainingAccounts: any[] = []
+  ): Promise<string> {
+    const user = this.provider.wallet.publicKey;
+
+    const [vaultPda] = this.getVaultAddress(this.vaultSeed);
+    const [treasuryPda] = this.getTreasuryAddress(vaultPda);
+
+    const depositsArg = deposits.map(d => ({
+      asset: d.asset,
+      amount: d.amount,
+    }));
+
+    const tx = await this.program.methods
+      .deposit(depositsArg, new BN(requestId))
+      .accounts({
+        vault: vaultPda,
+        treasury: treasuryPda,
+        user: user,
+        systemProgram: SystemProgram.programId,
+        tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
+      } as any)
+      .remainingAccounts(remainingAccounts)
+      .rpc();
+
+    console.log(`✅ Deposited assets to treasury`);
+    console.log(`   Transaction: ${tx}`);
+
+    return tx;
+  }
+
+  /**
+   * Deposit SOL into the vault (convenience method)
+   */
+  async depositSol(
+    amountSol: number,
+    requestId?: number
+  ): Promise<string> {
+    const amountLamports = amountSol * LAMPORTS_PER_SOL;
+    const deposits: AssetAmount[] = [{
+      asset: { sol: {} },
+      amount: new BN(amountLamports),
+    }];
+
+    const reqId = requestId || Date.now();
+    return this.deposit(deposits, reqId);
+  }
+
+  /**
    * Withdraw assets from the vault with multisig approval using tickets
    */
   async withdraw(
     ticket: WithdrawalTicket,
     ethKeypairs: EthereumKeypair[],
-    payer?: Keypair,
     remainingAccounts: any[] = []
   ): Promise<string> {
     const [treasuryPda] = this.getTreasuryAddress(ticket.vault);
     const [noncePda] = this.getNonceAddress(ticket.vault, ticket.requestId);
     
-    const actualPayer = payer || (this.provider.wallet as any).payer as Keypair;
+    const actualPayer = this.provider.wallet.publicKey;
 
     // Sign the ticket with all provided signers
     const signersWithSigs = ethKeypairs.map(kp => this.signWithdrawalTicket(ticket, kp));
@@ -556,12 +504,11 @@ export class MultisigVaultClient {
         treasury: treasuryPda,
         recipient: ticket.recipient,
         nonceAccount: noncePda,
-        payer: actualPayer.publicKey,
+        payer: actualPayer,
         systemProgram: SystemProgram.programId,
         tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
       } as any)
       .remainingAccounts(remainingAccounts)
-      .signers([actualPayer])
       .rpc();
 
     console.log(`✅ Withdrew assets from vault`);
@@ -583,9 +530,7 @@ export class MultisigVaultClient {
     ethKeypairs: EthereumKeypair[],
     expiryDurationSeconds: number = 3600, // 1 hour default
     networkId: NetworkId = NetworkId.DEVNET,
-    payer?: Keypair
   ): Promise<string> {
-    const vaultAuthority = this.provider.wallet.publicKey;
     const currentTimestamp = Math.floor(Date.now() / 1000);
     const expiryTimestamp = currentTimestamp + expiryDurationSeconds;
 
@@ -595,7 +540,6 @@ export class MultisigVaultClient {
     }];
 
     const ticket = this.createWithdrawalTicket(
-      vaultAuthority,
       recipient,
       withdrawals,
       requestId,
@@ -603,7 +547,111 @@ export class MultisigVaultClient {
       networkId
     );
 
-    return this.withdraw(ticket, ethKeypairs, payer);
+    return this.withdraw(ticket, ethKeypairs);
+  }
+
+  /**
+   * Fetch vault account data
+   */
+  async getVaultData() {
+    const [vaultPda] = this.getVaultAddress(this.vaultSeed);
+    const vaultAccount = await this.program.account.vault.fetch(vaultPda);
+
+    const [treasuryPda] = this.getTreasuryAddress(vaultPda);
+    const balance = await this.provider.connection.getBalance(treasuryPda);
+
+    return {
+      address: vaultPda,
+      authority: vaultAccount.authority,
+      mThreshold: vaultAccount.mThreshold,
+      signers: vaultAccount.signers,
+      whitelistedAssets: vaultAccount.whitelistedAssets,
+      bump: vaultAccount.bump,
+      balanceSol: balance / LAMPORTS_PER_SOL,
+      balanceLamports: balance,
+    };
+  }
+
+  /**
+   * Get treasury balance in SOL
+   */
+  async getTreasuryBalance(): Promise<number> {
+    const [vaultPda] = this.getVaultAddress(this.vaultSeed);
+    const [treasuryPda] = this.getTreasuryAddress(vaultPda);
+    const balance = await this.provider.connection.getBalance(treasuryPda);
+    return balance / LAMPORTS_PER_SOL;
+  }
+
+  /**
+   * Check if an Ethereum address is a valid signer for the vault
+   */
+  async isValidSigner(
+    ethAddress: Uint8Array
+  ): Promise<boolean> {
+    const vaultData = await this.getVaultData();
+    return vaultData.signers.some((s: number[]) => 
+      s.every((byte, idx) => byte === ethAddress[idx])
+    );
+  }
+
+  /**
+   * Check if a nonce has been used
+   */
+  async isNonceUsed(vaultPda: PublicKey, requestId: BN): Promise<boolean> {
+    try {
+      const [noncePda] = this.getNonceAddress(vaultPda, requestId);
+      const nonceAccount = await this.program.account.nonceAccount.fetch(noncePda);
+      return nonceAccount.used;
+    } catch (error) {
+      // Nonce account doesn't exist yet
+      return false;
+    }
+  }
+}
+
+export class MultisigAdminClient extends MultisigVaultClient {
+  constructor(
+    program: Program<StrikeExample>,
+    provider: anchor.AnchorProvider,
+    vaultSeed: string,
+  ) {
+    super(program, provider, vaultSeed);
+  }
+
+  /**
+   * Initialize a new multisig vault with Ethereum addresses
+   */
+  async initialize(
+    mThreshold: number,
+    ethAddresses: Uint8Array[] // Array of 20-byte Ethereum addresses
+  ): Promise<{ signature: string; vaultAddress: PublicKey }> {
+    const authority = this.provider.wallet.publicKey;
+
+    const [vaultPda, bump] = this.getVaultAddress(this.vaultSeed);
+    const [treasuryPda] = this.getTreasuryAddress(vaultPda);
+
+    // Convert to arrays for Anchor
+    const signersArray = ethAddresses.map(addr => Array.from(addr));
+
+    const tx = await this.program.methods
+      .initialize(this.vaultSeed, mThreshold, signersArray)
+      .accounts({
+        vault: vaultPda,
+        treasury: treasuryPda,
+        authority: authority,
+        systemProgram: SystemProgram.programId,
+      } as any)
+      .rpc();
+
+    console.log(`✅ Vault initialized: ${vaultPda.toBase58()}`);
+    console.log(`   Treasury: ${treasuryPda.toBase58()}`);
+    console.log(`   Transaction: ${tx}`);
+    console.log(`   M-of-N: ${mThreshold} of ${ethAddresses.length}`);
+
+    return {
+      signature: tx,
+      vaultAddress: vaultPda,
+    };
   }
 
   /**
@@ -615,13 +663,11 @@ export class MultisigVaultClient {
     ethKeypairs: EthereumKeypair[],
     expiryDurationSeconds: number = 3600,
     networkId: NetworkId = NetworkId.DEVNET,
-    payer?: Keypair
   ): Promise<string> {
-    const vaultAuthority = this.provider.wallet.publicKey;
-    const [vaultPda] = this.getVaultAddress(vaultAuthority);
+    const [vaultPda] = this.getVaultAddress(this.vaultSeed);
     const [noncePda] = this.getNonceAddress(vaultPda, new BN(requestId));
     
-    const actualPayer = payer || (this.provider.wallet as any).payer as Keypair;
+    const actualPayer = this.provider.wallet.publicKey;
     
     const currentTimestamp = Math.floor(Date.now() / 1000);
     const expiryTimestamp = currentTimestamp + expiryDurationSeconds;
@@ -646,10 +692,9 @@ export class MultisigVaultClient {
       .accounts({
         vault: vaultPda,
         nonceAccount: noncePda,
-        payer: actualPayer.publicKey,
+        payer: actualPayer,
         systemProgram: SystemProgram.programId,
       } as any)
-      .signers([actualPayer])
       .rpc();
 
     console.log(`✅ Added asset to whitelist`);
@@ -667,13 +712,11 @@ export class MultisigVaultClient {
     ethKeypairs: EthereumKeypair[],
     expiryDurationSeconds: number = 3600,
     networkId: NetworkId = NetworkId.DEVNET,
-    payer?: Keypair
   ): Promise<string> {
-    const vaultAuthority = this.provider.wallet.publicKey;
-    const [vaultPda] = this.getVaultAddress(vaultAuthority);
+    const [vaultPda] = this.getVaultAddress(this.vaultSeed);
     const [noncePda] = this.getNonceAddress(vaultPda, new BN(requestId));
     
-    const actualPayer = payer || (this.provider.wallet as any).payer as Keypair;
+    const actualPayer = this.provider.wallet.publicKey;
     
     const currentTimestamp = Math.floor(Date.now() / 1000);
     const expiryTimestamp = currentTimestamp + expiryDurationSeconds;
@@ -698,10 +741,9 @@ export class MultisigVaultClient {
       .accounts({
         vault: vaultPda,
         nonceAccount: noncePda,
-        payer: actualPayer.publicKey,
+        payer: actualPayer,
         systemProgram: SystemProgram.programId,
       } as any)
-      .signers([actualPayer])
       .rpc();
 
     console.log(`✅ Removed asset from whitelist`);
@@ -712,10 +754,9 @@ export class MultisigVaultClient {
 
   async createVaultTokenAccount(
     mint: PublicKey,
-    authority: Keypair,
   ) {
-    const vaultAuthority = this.provider.wallet.publicKey;
-    const [vaultPda] = this.getVaultAddress(vaultAuthority);
+    const [vaultPda] = this.getVaultAddress(this.vaultSeed);
+    const actualPayer = this.provider.wallet.publicKey;
 
     try {
       const createVaultTokenAccountTx = await this.program.methods
@@ -723,12 +764,11 @@ export class MultisigVaultClient {
         .accounts({
           vault: vaultPda,
           mint: mint,
-          payer: authority.publicKey,
+          payer: actualPayer,
           systemProgram: anchor.web3.SystemProgram.programId,
           tokenProgram: TOKEN_PROGRAM_ID,
           associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
         } as any)
-        .signers([authority])
         .rpc();
 
       console.log(`✅ Vault token account created`);
@@ -739,65 +779,6 @@ export class MultisigVaultClient {
       } else {
         throw err;
       }
-    }
-  }
-
-  /**
-   * Fetch vault account data
-   */
-  async getVaultData(vaultAuthority: PublicKey) {
-    const [vaultPda] = this.getVaultAddress(vaultAuthority);
-    const vaultAccount = await this.program.account.vault.fetch(vaultPda);
-
-    const [treasuryPda] = this.getTreasuryAddress(vaultPda);
-    const balance = await this.provider.connection.getBalance(treasuryPda);
-
-    return {
-      address: vaultPda,
-      authority: vaultAccount.authority,
-      mThreshold: vaultAccount.mThreshold,
-      signers: vaultAccount.signers,
-      whitelistedAssets: vaultAccount.whitelistedAssets,
-      bump: vaultAccount.bump,
-      balanceSol: balance / LAMPORTS_PER_SOL,
-      balanceLamports: balance,
-    };
-  }
-
-  /**
-   * Get treasury balance in SOL
-   */
-  async getTreasuryBalance(vaultAuthority: PublicKey): Promise<number> {
-    const [vaultPda] = this.getVaultAddress(vaultAuthority);
-    const [treasuryPda] = this.getTreasuryAddress(vaultPda);
-    const balance = await this.provider.connection.getBalance(treasuryPda);
-    return balance / LAMPORTS_PER_SOL;
-  }
-
-  /**
-   * Check if an Ethereum address is a valid signer for the vault
-   */
-  async isValidSigner(
-    vaultAuthority: PublicKey,
-    ethAddress: Uint8Array
-  ): Promise<boolean> {
-    const vaultData = await this.getVaultData(vaultAuthority);
-    return vaultData.signers.some((s: number[]) => 
-      s.every((byte, idx) => byte === ethAddress[idx])
-    );
-  }
-
-  /**
-   * Check if a nonce has been used
-   */
-  async isNonceUsed(vaultPda: PublicKey, requestId: BN): Promise<boolean> {
-    try {
-      const [noncePda] = this.getNonceAddress(vaultPda, requestId);
-      const nonceAccount = await this.program.account.nonceAccount.fetch(noncePda);
-      return nonceAccount.used;
-    } catch (error) {
-      // Nonce account doesn't exist yet
-      return false;
     }
   }
 }
@@ -835,19 +816,86 @@ export function loadKeypairFromJson(filePath: string): Keypair {
   return Keypair.fromSecretKey(secret);
 }
 
-/**
- * Setup function to create a client instance
- */
-export function setupClient(authority: Keypair, provider_url: string): MultisigVaultClient {
-  const connection = new Connection(provider_url, "confirmed");
-  const wallet = new Wallet(authority);
+export function computeVaultSeed(signers: Uint8Array[], mThreshold: number): string {
+  const sortedEthAddresses = [...signers].sort((a, b) => {
+    for (let i = 0; i < 20; i++) {
+      if (a[i] !== b[i]) return a[i] - b[i];
+    }
+    return 0;
+  });
 
-  const provider = new anchor.AnchorProvider(connection, wallet, {
+  const h = createHash("sha256");
+  h.update(Buffer.from("strike"));              // namespace prefix
+  h.update(Buffer.from([mThreshold & 0xff]));     // one-byte threshold
+  for (const s of sortedEthAddresses) {
+    if (s.length !== 20) throw new Error("each signer must be 20 bytes (ethereum address)");
+    h.update(Buffer.from(s));
+  }
+  const hash = h.digest(); // Buffer(32)
+  return hash.subarray(0, 16).toString('hex');
+}
+
+export function setupProvider(
+  authorityOrWallet: Keypair | Wallet | PublicKey, 
+  providerUrl: string,
+): anchor.AnchorProvider {
+const connection = new Connection(providerUrl, "confirmed");
+
+  let wallet: Wallet | null = null;
+
+  // Init wallet directly from keypair.
+  if (authorityOrWallet instanceof Keypair) {
+    wallet = new Wallet(authorityOrWallet);
+  } 
+  // Already be anchor Wallet (frontend wallet-adapter or customized implementation).
+  else if (
+    authorityOrWallet && "publicKey" in authorityOrWallet && 
+    typeof (authorityOrWallet as any).signTransaction === "function"
+  ) {
+    wallet = authorityOrWallet as Wallet;
+  } 
+  // Readonly
+  else if (authorityOrWallet instanceof PublicKey) {
+    wallet = {
+      publicKey: authorityOrWallet,
+      signTransaction: async (tx: Transaction) => {
+        return tx;
+      },
+      signAllTransactions: async (txs: Transaction[]) => txs,
+    } as Wallet;
+  }
+
+  if (wallet == null) {
+    throw Error("null wallet is not allowed");
+  }
+
+  return new anchor.AnchorProvider(connection, wallet, {
     preflightCommitment: "confirmed",
     commitment: "confirmed",
   });
+}
 
+/**
+ * Setup function to create a client instance
+ */
+export function setupUserClient(
+  authorityOrWallet: Keypair | Wallet | PublicKey, 
+  providerUrl: string,
+  vaultSeed: string,
+): MultisigVaultClient {
+  const provider = setupProvider(authorityOrWallet, providerUrl);
   const program = new Program(idl, provider) as Program<StrikeExample>;
 
-  return new MultisigVaultClient(program, provider);
+  return new MultisigVaultClient(program, provider, vaultSeed);
+}
+
+export function setupAdminClient(
+  authorityOrWallet: Keypair | Wallet | PublicKey, 
+  providerUrl: string,
+  vaultSeed: string,
+): MultisigAdminClient {
+  const provider = setupProvider(authorityOrWallet, providerUrl);
+  const program = new Program(idl, provider) as Program<StrikeExample>;
+
+  return new MultisigAdminClient(program, provider, vaultSeed);
 }

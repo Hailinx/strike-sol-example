@@ -172,7 +172,7 @@ fn check_before_admin_update(
         ErrorCode::TicketExpired
     );
     require!(
-        signers_with_sigs.len() != vault.signers.len(),
+        signers_with_sigs.len() == vault.signers.len(),
         ErrorCode::InsufficientSignatures
     );
     require!(&vault.authority == payer.key, ErrorCode::UnauthorizedUser);
@@ -192,7 +192,7 @@ fn check_before_admin_update(
 pub struct AddAsset<'info> {
     #[account(
         mut,
-        seeds = [b"vault", vault.authority.as_ref()],
+        seeds = [b"vault", vault.vault_seed.as_bytes()],
         bump = vault.bump
     )]
     pub vault: Account<'info, Vault>,
@@ -217,7 +217,7 @@ pub struct AddAsset<'info> {
 pub struct RemoveAsset<'info> {
     #[account(
         mut,
-        seeds = [b"vault", vault.authority.as_ref()],
+        seeds = [b"vault", vault.vault_seed.as_bytes()],
         bump = vault.bump
     )]
     pub vault: Account<'info, Vault>,
@@ -240,7 +240,7 @@ pub struct RemoveAsset<'info> {
 #[derive(Accounts)]
 pub struct CreateVaultTokenAccount<'info> {
     #[account(
-        seeds = [b"vault", vault.authority.as_ref()],
+        seeds = [b"vault", vault.vault_seed.as_bytes()],
         bump = vault.bump
     )]
     pub vault: Account<'info, Vault>,
@@ -268,7 +268,7 @@ pub struct CreateVaultTokenAccount<'info> {
 pub struct RotateValidator<'info> {
     #[account(
         mut,
-        seeds = [b"vault", vault.authority.as_ref()],
+        seeds = [b"vault", vault.vault_seed.as_bytes()],
         bump = vault.bump
     )]
     pub vault: Account<'info, Vault>,

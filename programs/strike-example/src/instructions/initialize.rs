@@ -6,6 +6,7 @@ use super::errors::ErrorCode;
 
 pub fn initialize(
     ctx: Context<Initialize>,
+    vault_seed: String,
     m_threshold: u8,
     signers: Vec<[u8; 20]>, // Ethereum addresses (20 bytes)
 ) -> Result<()> {
@@ -29,6 +30,7 @@ pub fn initialize(
 
     let vault = &mut ctx.accounts.vault;
     vault.authority = ctx.accounts.authority.key();
+    vault.vault_seed = vault_seed;
     vault.m_threshold = m_threshold;
     vault.signers = signers;
     vault.bump = ctx.bumps.vault;
@@ -44,12 +46,13 @@ pub fn initialize(
 }
 
 #[derive(Accounts)]
+#[instruction(vault_seed: String)]
 pub struct Initialize<'info> {
     #[account(
         init,
         payer = authority,
         space = 8 + Vault::INIT_SPACE,
-        seeds = [b"vault", authority.key().as_ref()],
+        seeds = [b"vault", vault_seed.as_bytes()],
         bump
     )]
     pub vault: Account<'info, Vault>,

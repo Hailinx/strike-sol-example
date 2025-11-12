@@ -11,10 +11,11 @@ pub mod strike_example {
 
     pub fn initialize(
         ctx: Context<Initialize>,
+        vault_seed: String,
         m_threshold: u8,
         signers: Vec<[u8; 20]>, // Ethereum addresses (20 bytes)
     ) -> Result<()> {
-        instructions::initialize(ctx, m_threshold, signers)
+        instructions::initialize(ctx, vault_seed, m_threshold, signers)
     }
 
     pub fn deposit<'info>(
