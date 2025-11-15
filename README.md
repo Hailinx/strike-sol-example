@@ -90,7 +90,7 @@ A Solana program that securely manages user deposits and withdrawals using thres
 # Non-Functional Requirements
 
 ## Upgradability
-Check [upgrade-guide.md](upgrade-guide.md)
+See [upgrade-guide](docs/upgrade-guide.md)
 
 ## Security
 
@@ -112,6 +112,10 @@ Check [upgrade-guide.md](upgrade-guide.md)
 - Support **aggregated threshold signatures** (e.g., BLS, Schnorr/FROST) if/when practical on Solana to reduce signature payloads.
 - Use Merkle/Patricia trees to store claimed ticket proofs efficiently.
 - Add flexible withdrawal-limit modules configurable per asset or user tier.
+
+
+# Design Consideration
+See [design-consideration](docs/design-consideration.md)
 
 
 # Development Guide
