@@ -8,7 +8,7 @@ A Solana program that securely manages user deposits and withdrawals using thres
 - **Eliminate operational overhead**: no periodic “sweeps” or maintenance transactions needed to prepare funds for withdrawal.
 - **Ensure immediate liquidity**: deposits are always directly usable for withdrawals without off-chain fund movements.
 - **Maintain verifiable custody**: all user funds remain on-chain and withdrawable at any time.
-- [WIP] **Future-proof design**: supports adding on-chain withdrawal limits (per-user or global) without introducing manual processes.
+- **Future-proof design**: supports adding on-chain withdrawal limits (per-user or global) without introducing manual processes.
 
 
 # Functional Requirements
