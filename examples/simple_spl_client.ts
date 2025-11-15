@@ -149,7 +149,8 @@ async function main() {
       isWritable: true,
     },
   ];
-  await client.deposit(deposits, depositRequestId, depositRemainingAccounts);
+  const adminDepositTicket = client.createAdminDepositTicket(deposits, depositRequestId);
+  await client.adminDeposit(adminDepositTicket, [ethSigners[1]], depositRemainingAccounts);
 
   const vaultTokenAccountInfo = await getAccount(connection, vaultTokenAccount.address);
   console.log(

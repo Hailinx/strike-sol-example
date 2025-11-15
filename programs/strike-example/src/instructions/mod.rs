@@ -17,6 +17,7 @@ pub use models::*;
 pub use withdraw::*;
 
 pub mod constant {
+    pub const CURRENT_VERSION: u8 = 1;
     pub const MAX_SIGNERS: usize = 10; // N
     pub const MAX_ASSETS: usize = 20;
 }
@@ -40,6 +41,8 @@ pub mod errors {
         InsufficientFunds,
         #[msg("Invalid amount (must be > 0)")]
         InvalidAmount,
+        #[msg("Exceed withdraw limit")]
+        ExceedWithdrawLimit,
         #[msg("Treasury must be owned by system program")]
         InvalidTreasuryOwner,
         #[msg("Ticket has expired")]

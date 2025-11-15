@@ -63,6 +63,12 @@ pub fn withdraw<'info>(
 
     for withdrawal in ticket.withdrawals {
         require!(withdrawal.amount > 0, ErrorCode::InvalidAmount);
+        if let Some(withdraw_limit) = vault.withdraw_limit {
+            require!(
+                withdrawal.amount <= withdraw_limit,
+                ErrorCode::ExceedWithdrawLimit
+            );
+        }
 
         // Don't check whitelist since withdraw is always allowed.
         match withdrawal.asset {

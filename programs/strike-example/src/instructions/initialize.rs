@@ -30,6 +30,7 @@ pub fn initialize(
     }
 
     let vault = &mut ctx.accounts.vault;
+    vault.version = CURRENT_VERSION;
     vault.authority = ctx.accounts.authority.key();
     vault.vault_seed = vault_seed;
     vault.network_id = network_id;

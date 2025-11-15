@@ -161,6 +161,23 @@ pub fn rotate_validators(
     Ok(())
 }
 
+pub fn update_withdraw_limit(
+    ctx: Context<UpdateWithdrawLimit>,
+    withdraw_limit: Option<u64>,
+) -> Result<()> {
+    let vault = &mut ctx.accounts.vault;
+
+    // Only authority is allowed to update withdraw_limit.
+    require!(
+        &vault.authority == ctx.accounts.payer.key,
+        ErrorCode::UnauthorizedUser
+    );
+
+    vault.withdraw_limit = withdraw_limit;
+
+    Ok(())
+}
+
 fn check_before_admin_update(
     vault: &Account<Vault>,
     payer: &Signer,
@@ -289,6 +306,21 @@ pub struct RotateValidator<'info> {
         bump
     )]
     pub nonce_account: Account<'info, NonceAccount>,
+
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateWithdrawLimit<'info> {
+    #[account(
+        mut,
+        seeds = [b"vault", vault.vault_seed.as_bytes()],
+        bump = vault.bump
+    )]
+    pub vault: Account<'info, Vault>,
 
     #[account(mut)]
     pub payer: Signer<'info>,

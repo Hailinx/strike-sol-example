@@ -1017,7 +1017,7 @@ export class MultisigAdminClient extends MultisigVaultClient {
   /**
    * Admin deposit assets from the vault with multisig approval using tickets
    */
-  async admin_deposit(
+  async adminDeposit(
     ticket: AdminDepositTicket,
     ethKeypairs: EthereumKeypair[],
     remainingAccounts: any[] = []
@@ -1069,6 +1069,26 @@ export class MultisigAdminClient extends MultisigVaultClient {
     return tx;
   }
 
+  createAdminDepositTicket(
+    deposits: AssetAmount[],
+    requestId: number,
+    expiryDurationSeconds: number = 3600,
+  ): AdminDepositTicket {
+    const currentTimestamp = Math.floor(Date.now() / 1000);
+    const expiryTimestamp = currentTimestamp + expiryDurationSeconds;
+
+    const [vaultPda] = this.getVaultAddress(this.vaultSeed);
+
+    return {
+      requestId: new BN(requestId),
+      vault: vaultPda,
+      user: this.provider.wallet.publicKey,
+      deposits,
+      expiry: new BN(expiryTimestamp),
+      networkId: new BN(this.networkId),
+    };
+  } 
+
   /**
    * Convenience method: deposit SOL to admin with current timestamp + duration
    */
@@ -1078,26 +1098,13 @@ export class MultisigAdminClient extends MultisigVaultClient {
     ethKeypairs: EthereumKeypair[],
     expiryDurationSeconds: number = 3600, // 1 hour default
   ): Promise<string> {
-    const currentTimestamp = Math.floor(Date.now() / 1000);
-    const expiryTimestamp = currentTimestamp + expiryDurationSeconds;
-
     const deposits: AssetAmount[] = [{
       asset: { sol: {} },
       amount: new BN(amountSol * LAMPORTS_PER_SOL),
     }];
+    const ticket = this.createAdminDepositTicket(deposits, requestId, expiryDurationSeconds);
 
-    const [vaultPda] = this.getVaultAddress(this.vaultSeed);
-
-    const ticket = {
-      requestId: new BN(requestId),
-      vault: vaultPda,
-      user: this.provider.wallet.publicKey,
-      deposits,
-      expiry: new BN(expiryTimestamp),
-      networkId: new BN(this.networkId),
-    } as AdminDepositTicket;
-
-    return this.admin_deposit(ticket, ethKeypairs);
+    return this.adminDeposit(ticket, ethKeypairs);
   }
 }
 

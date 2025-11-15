@@ -71,4 +71,11 @@ pub mod strike_example {
     ) -> Result<()> {
         instructions::rotate_validators(ctx, ticket, signers_with_sigs)
     }
+
+    pub fn update_withdraw_limit(
+        ctx: Context<UpdateWithdrawLimit>,
+        withdraw_limit: Option<u64>,
+    ) -> Result<()> {
+        instructions::update_withdraw_limit(ctx, withdraw_limit)
+    }
 }
