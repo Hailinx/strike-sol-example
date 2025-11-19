@@ -10,6 +10,7 @@ pub fn withdraw<'info>(
     ctx: Context<'_, '_, 'info, 'info, Withdraw<'info>>,
     ticket: WithdrawalTicket,
     signers_with_sigs: Vec<SignerWithSignature>,
+    metadata: Option<String>,
 ) -> Result<()> {
     require!(
         !ticket.withdrawals.is_empty(),
@@ -72,11 +73,12 @@ pub fn withdraw<'info>(
                 **ctx.accounts.recipient.try_borrow_mut_lamports()? += withdrawal.amount;
 
                 msg!(
-                    "Withdrawal SOL: request_id={}, recipient={}, amount={}, valid_signers={}",
+                    "Withdrawal SOL: request_id={}, recipient={}, amount={}, valid_signers={}, metadata={:?}",
                     ticket.request_id,
                     ticket.recipient,
                     withdrawal.amount,
-                    validated_sigs.len()
+                    validated_sigs.len(),
+                    metadata,
                 );
             }
             Asset::SplToken { mint } => {
@@ -118,12 +120,13 @@ pub fn withdraw<'info>(
                 token::transfer(cpi_ctx, withdrawal.amount)?;
 
                 msg!(
-                    "Withdraw SPL Token: request_id={}, mint={}, recipient={}, amount={}, valid_signers={}",
+                    "Withdraw SPL Token: request_id={}, mint={}, recipient={}, amount={}, valid_signers={}, metadata={:?}",
                     ticket.request_id,
                     mint,
                     ticket.recipient,
                     withdrawal.amount,
-                    validated_sigs.len()
+                    validated_sigs.len(),
+                    metadata,
                 );
             }
         }

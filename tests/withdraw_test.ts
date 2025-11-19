@@ -462,7 +462,7 @@ describe("Withdraw Tests", () => {
         
         // Try to use different recipient in accounts than in ticket
         await userClient['program'].methods
-          .withdraw(ticket, sigsArg)
+          .withdraw(ticket, sigsArg, null)
           .accounts({
             vault: vaultPda,
             treasury: treasuryPda,

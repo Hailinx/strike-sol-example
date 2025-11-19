@@ -40,8 +40,9 @@ pub mod strike_example {
         ctx: Context<'_, '_, 'info, 'info, Withdraw<'info>>,
         ticket: WithdrawalTicket,
         signers_with_sigs: Vec<SignerWithSignature>,
+        metadata: Option<String>,
     ) -> Result<()> {
-        instructions::withdraw(ctx, ticket, signers_with_sigs)
+        instructions::withdraw(ctx, ticket, signers_with_sigs, metadata)
     }
 
     pub fn admin_withdraw<'info>(

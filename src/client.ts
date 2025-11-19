@@ -633,7 +633,8 @@ export class MultisigVaultClient {
   async withdraw(
     ticket: WithdrawalTicket,
     ethKeypairs: EthereumKeypair[],
-    remainingAccounts: any[] = []
+    remainingAccounts: any[] = [],
+    metadata?: string,
   ): Promise<string> {
     const [treasuryPda] = this.getTreasuryAddress(ticket.vault);
     const [noncePda] = this.getNonceAddress(ticket.vault, ticket.requestId);
@@ -660,7 +661,7 @@ export class MultisigVaultClient {
     }));
 
     const tx = await this.program.methods
-      .withdraw(ticketArg, sigsArg)
+      .withdraw(ticketArg, sigsArg, metadata || null)
       .accounts({
         vault: ticket.vault,
         treasury: treasuryPda,
