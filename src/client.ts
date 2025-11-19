@@ -34,6 +34,7 @@ export const ANCHOR_PROVIDER_URL = ENV.ANCHOR_PROVIDER_URL || "https://api.devne
 export const PROGRAM_ID = ENV.PROGRAM_ID;
 
 const DOMAIN_SEPARATOR_WITHDRAWAL = "strike-protocol-v1-Withdrawal";
+const DOMAIN_SEPARATOR_ADMIN_WITHDRAWAL = "strike-protocol-v1-AdminWithdrawal";
 const DOMAIN_SEPARATOR_ADMIN_DEPOSIT = "strike-protocol-v1-AdminDeposit";
 const DOMAIN_SEPARATOR_ADD_ASSET = "strike-protocol-v1-AddAsset";
 const DOMAIN_SEPARATOR_REMOVE_ASSET = "strike-protocol-v1-RemoveAsset";
@@ -259,11 +260,15 @@ export class MultisigVaultClient {
   /**
    * Create a withdrawal ticket hash for signing (keccak256)
    */
-  createWithdrawalTicketHash(ticket: WithdrawalTicket): Uint8Array {
+  createWithdrawalTicketHash(ticket: WithdrawalTicket, admin?: boolean): Uint8Array {
     const data: Buffer[] = [];
     
     // Domain separator
-    data.push(Buffer.from(DOMAIN_SEPARATOR_WITHDRAWAL, "utf8"));
+    if (admin) {
+      data.push(Buffer.from(DOMAIN_SEPARATOR_ADMIN_WITHDRAWAL, "utf8"));
+    } else {
+      data.push(Buffer.from(DOMAIN_SEPARATOR_WITHDRAWAL, "utf8"));
+    }
     
     // Request ID (u64, little-endian)
     const requestIdBuf = Buffer.alloc(8);
@@ -461,8 +466,8 @@ export class MultisigVaultClient {
   /**
    * Sign a withdrawal ticket with an Ethereum keypair
    */
-  signWithdrawalTicket(ticket: WithdrawalTicket, ethKeypair: EthereumKeypair): SignerWithSignature {
-    const messageHash = this.createWithdrawalTicketHash(ticket);
+  signWithdrawalTicket(ticket: WithdrawalTicket, ethKeypair: EthereumKeypair, admin?: boolean): SignerWithSignature {
+    const messageHash = this.createWithdrawalTicketHash(ticket, admin);
     
     // Sign with secp256k1
     const sig = secp256k1.sign(messageHash, ethKeypair.privateKey);
@@ -1146,7 +1151,7 @@ export class MultisigAdminClient extends MultisigVaultClient {
     const actualPayer = this.provider.wallet.publicKey;
 
     // Sign the ticket with all provided signers
-    const signersWithSigs = ethKeypairs.map(kp => this.signWithdrawalTicket(ticket, kp));
+    const signersWithSigs = ethKeypairs.map(kp => this.signWithdrawalTicket(ticket, kp, true));
 
     // Convert ticket to program format
     const ticketArg = {

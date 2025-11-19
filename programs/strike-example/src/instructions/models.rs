@@ -223,3 +223,37 @@ impl Ticket for WithdrawalTicket {
         hash_result.to_bytes()
     }
 }
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct AdminWithdrawalTicket {
+    pub request_id: u64,
+    pub vault: Pubkey,
+    pub recipient: Pubkey,
+    pub withdrawals: Vec<AssetAmount>,
+    pub expiry: i64,     // Unix timestamp
+    pub network_id: u64, // Solana mainnet=101, devnet=102, testnet=103
+}
+
+impl Ticket for AdminWithdrawalTicket {
+    fn separator(&self) -> &'static str {
+        "strike-protocol-v1-AdminWithdrawal"
+    }
+
+    fn hash(&self) -> [u8; 32] {
+        let mut data = Vec::new();
+        data.extend_from_slice(self.separator().as_bytes());
+
+        // Ticket fields
+        data.extend_from_slice(&self.request_id.to_le_bytes());
+        data.extend_from_slice(&self.vault.to_bytes());
+        data.extend_from_slice(&self.recipient.to_bytes());
+        for asset_amount in self.withdrawals.iter() {
+            asset_amount.add_to_data(&mut data);
+        }
+        data.extend_from_slice(&self.expiry.to_le_bytes());
+        data.extend_from_slice(&self.network_id.to_le_bytes());
+
+        let hash_result = keccak::hash(&data);
+        hash_result.to_bytes()
+    }
+}

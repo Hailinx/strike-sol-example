@@ -8,7 +8,7 @@ use super::util::validate_sigs;
 
 pub fn admin_withdraw<'info>(
     ctx: Context<'_, '_, 'info, 'info, AdminWithdraw<'info>>,
-    ticket: WithdrawalTicket,
+    ticket: AdminWithdrawalTicket,
     signers_with_sigs: Vec<SignerWithSignature>,
 ) -> Result<()> {
     require!(
