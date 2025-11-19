@@ -37,8 +37,6 @@ pub mod errors {
         DuplicateSigner,
         #[msg("Not enough valid signatures from authorized signers")]
         InsufficientValidSignatures,
-        #[msg("Unauthorized user")] // todo remove me after fix the unit test
-        UnauthorizedUser,
         #[msg("Insufficient funds in treasury")]
         InsufficientFunds,
         #[msg("Invalid amount (must be > 0)")]
@@ -69,7 +67,5 @@ pub mod errors {
         NoWithdrawalsProvided,
         #[msg("Token account not found")]
         TokenAccountNotFound,
-        #[msg("Admin deposit should be signed")]
-        AdminDepositShouldBeSigned,
     }
 }
