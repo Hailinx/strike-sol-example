@@ -25,11 +25,6 @@ pub fn deposit<'info>(
 
         match deposit_item.asset {
             Asset::Sol => {
-                require!(
-                    ctx.accounts.treasury.owner == &system_program::ID,
-                    ErrorCode::InvalidTreasuryOwner
-                );
-
                 // Instruct trasfer from user -> treasury.
                 let ix = anchor_lang::solana_program::system_instruction::transfer(
                     &ctx.accounts.user.key(),
@@ -111,7 +106,7 @@ pub struct Deposit<'info> {
     #[account(
         mut,
         seeds = [b"treasury", vault.key().as_ref()],
-        bump
+        bump = vault.treasury_bump
     )]
     /// CHECK: Treasury PDA verified by seeds
     pub treasury: UncheckedAccount<'info>,

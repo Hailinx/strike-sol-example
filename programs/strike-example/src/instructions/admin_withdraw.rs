@@ -59,12 +59,7 @@ pub fn admin_withdraw<'info>(
         // Don't check whitelist since withdraw is always allowed.
         match withdrawal.asset {
             Asset::Sol => {
-                require!(
-                    ctx.accounts.treasury.owner == &system_program::ID,
-                    ErrorCode::InvalidTreasuryOwner
-                );
-
-                // Check sufficient balance
+                // Check sufficient balance.
                 let treasury_balance = ctx.accounts.treasury.lamports();
                 let rent_exempt_minimum = Rent::get()?
                     .minimum_balance(ctx.accounts.treasury.to_account_info().data_len());
@@ -73,25 +68,8 @@ pub fn admin_withdraw<'info>(
                 require!(available >= withdrawal.amount, ErrorCode::InsufficientFunds);
 
                 // Execute transfer
-                let vault_key = vault.key();
-                let seeds = &[b"treasury", vault_key.as_ref(), &[ctx.bumps.treasury]];
-                let signer_seeds = &[&seeds[..]];
-
-                let ix = anchor_lang::solana_program::system_instruction::transfer(
-                    &ctx.accounts.treasury.key(),
-                    &ctx.accounts.recipient.key(),
-                    withdrawal.amount,
-                );
-
-                anchor_lang::solana_program::program::invoke_signed(
-                    &ix,
-                    &[
-                        ctx.accounts.treasury.to_account_info(),
-                        ctx.accounts.recipient.to_account_info(),
-                        ctx.accounts.system_program.to_account_info(),
-                    ],
-                    signer_seeds,
-                )?;
+                **ctx.accounts.treasury.try_borrow_mut_lamports()? -= withdrawal.amount;
+                **ctx.accounts.recipient.try_borrow_mut_lamports()? += withdrawal.amount;
 
                 msg!(
                     "Admin Withdrawal SOL: request_id={}, recipient={}, amount={}, valid_signers={}",
@@ -167,7 +145,7 @@ pub struct AdminWithdraw<'info> {
     #[account(
         mut,
         seeds = [b"treasury", vault.key().as_ref()],
-        bump
+        bump = vault.treasury_bump
     )]
     /// CHECK: Treasury PDA verified by seeds
     pub treasury: UncheckedAccount<'info>,

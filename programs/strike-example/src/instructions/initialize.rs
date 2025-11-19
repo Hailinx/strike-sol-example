@@ -37,6 +37,7 @@ pub fn initialize(
     vault.m_threshold = m_threshold;
     vault.signers = signers;
     vault.bump = ctx.bumps.vault;
+    vault.treasury_bump = ctx.bumps.treasury;
 
     msg!(
         "Vault initialized: m={}, n={}, authority={}",
@@ -63,8 +64,7 @@ pub struct Initialize<'info> {
     #[account(
         init,
         payer = authority,
-        space = 0,
-        owner = system_program::ID,
+        space = 8,
         seeds = [b"treasury", vault.key().as_ref()],
         bump
     )]

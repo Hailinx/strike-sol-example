@@ -1028,14 +1028,6 @@ describe("Withdraw Tests", () => {
   });
 
   describe("Treasury State", () => {
-    it("should verify treasury is owned by system program", async function() {
-      this.timeout(10000);
-      
-      const treasuryInfo = await connection.getAccountInfo(treasuryPda);
-      expect(treasuryInfo).to.not.be.null;
-      expect(treasuryInfo!.owner.toBase58()).to.equal(anchor.web3.SystemProgram.programId.toBase58());
-    });
-
     it("should verify treasury PDA derivation", async function() {
       this.timeout(10000);
       

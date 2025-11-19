@@ -45,8 +45,6 @@ pub mod errors {
         InvalidAmount,
         #[msg("Exceed withdraw limit")]
         ExceedWithdrawLimit,
-        #[msg("Treasury must be owned by system program")]
-        InvalidTreasuryOwner,
         #[msg("Ticket has expired")]
         TicketExpired,
         #[msg("Nonce has already been used")]

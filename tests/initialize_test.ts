@@ -368,7 +368,7 @@ describe("Initialize Vault Tests", () => {
       await adminClient.initialize(mThreshold, ethAddresses);
 
       const balance = await adminClient.getTreasuryBalance();
-      const lamports = await connection.getMinimumBalanceForRentExemption(0);
+      const lamports = await connection.getMinimumBalanceForRentExemption(8);
       const expectedSol = lamports / LAMPORTS_PER_SOL;
 
       expect(balance).to.equal(expectedSol);
