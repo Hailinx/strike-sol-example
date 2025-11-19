@@ -292,27 +292,6 @@ describe("Admin Functions Tests", () => {
         expect(error.message).to.match(/already in use|Nonce has already been used/);
       }
     });
-
-    it("should fail when called by non-authority", async function() {
-      this.timeout(30000);
-      
-      // Create client with user instead of authority
-      const nonAuthClient = setupAdminClient(user, ANCHOR_PROVIDER_URL, vaultSeed);
-      
-      const solAsset: Asset = { sol: {} };
-      const requestId = Date.now();
-      
-      try {
-        await nonAuthClient.addAsset(
-          solAsset,
-          requestId,
-          [ethKeypair1, ethKeypair2, ethKeypair3],
-        );
-        expect.fail("Should have thrown an error");
-      } catch (error: any) {
-        expect(error.message).to.include("Unauthorized user");
-      }
-    });
   });
 
   describe("Remove Asset", () => {
@@ -404,26 +383,6 @@ describe("Admin Functions Tests", () => {
         expect.fail("Should have thrown an error");
       } catch (error: any) {
         expect(error.message).to.include("Insufficient signatures provided");
-      }
-    });
-
-    it("should fail when called by non-authority", async function() {
-      this.timeout(30000);
-      
-      const nonAuthClient = setupAdminClient(user, ANCHOR_PROVIDER_URL, vaultSeed);
-      
-      const solAsset: Asset = { sol: {} };
-      const requestId = Date.now();
-      
-      try {
-        await nonAuthClient.removeAsset(
-          solAsset,
-          requestId,
-          [ethKeypair1, ethKeypair2, ethKeypair3],
-        );
-        expect.fail("Should have thrown an error");
-      } catch (error: any) {
-        expect(error.message).to.include("Unauthorized user");
       }
     });
   });
@@ -597,31 +556,6 @@ describe("Admin Functions Tests", () => {
         expect(error.message).to.include("Insufficient signatures provided");
       }
     });
-
-    it("should fail when called by non-authority", async function() {
-      this.timeout(30000);
-      
-      const nonAuthClient = setupAdminClient(user, ANCHOR_PROVIDER_URL, vaultSeed);
-      
-      const newEthKeypair1 = MultisigAdminClient.generateEthereumKeypair();
-      const newEthKeypair2 = MultisigAdminClient.generateEthereumKeypair();
-      
-      const newSigners = [newEthKeypair1.address, newEthKeypair2.address];
-      const newThreshold = 2;
-      const requestId = Date.now();
-      
-      try {
-        await nonAuthClient.rotateValidators(
-          newSigners,
-          newThreshold,
-          requestId,
-          [ethKeypair1, ethKeypair2, ethKeypair3],
-        );
-        expect.fail("Should have thrown an error");
-      } catch (error: any) {
-        expect(error.message).to.include("Unauthorized user");
-      }
-    });
   });
 
   describe("Create Vault Token Account", () => {
@@ -670,19 +604,6 @@ describe("Admin Functions Tests", () => {
       
       expect(ata1.mint.toBase58()).to.equal(testMint.toBase58());
       expect(ata2.mint.toBase58()).to.equal(testMint2.toBase58());
-    });
-
-    it("should fail when called by non-authority", async function() {
-      this.timeout(30000);
-      
-      const nonAuthClient = setupAdminClient(user, ANCHOR_PROVIDER_URL, vaultSeed);
-      
-      try {
-        await nonAuthClient.createVaultTokenAccount(testMint);
-        expect.fail("Should have thrown an error");
-      } catch (error: any) {
-        expect(error.message).to.include("Unauthorized user");
-      }
     });
   });
 

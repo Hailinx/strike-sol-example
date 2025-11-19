@@ -15,14 +15,6 @@ pub fn deposit<'info>(
 
     let vault = &ctx.accounts.vault;
 
-    // Admin should not access deposit. Use admin_deposit instead.
-    require!(
-        ctx.accounts.user.key != &vault.authority,
-        ErrorCode::AdminDepositShouldBeSigned
-    );
-
-    let vault = &ctx.accounts.vault;
-
     for deposit_item in deposits {
         require!(deposit_item.amount > 0, ErrorCode::InvalidAmount);
 

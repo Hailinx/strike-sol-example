@@ -212,6 +212,19 @@ export class MultisigVaultClient {
   }
 
   /**
+   * Derive the nonce account PDA address for admin
+   */
+  getAdminNonceAddress(vaultPda: PublicKey, requestId: BN): [PublicKey, number] {
+    const requestIdBuffer = Buffer.alloc(8);
+    requestIdBuffer.writeBigUInt64LE(BigInt(requestId.toString()));
+    
+    return PublicKey.findProgramAddressSync(
+      [Buffer.from("admin_nonce"), vaultPda.toBuffer(), requestIdBuffer],
+      this.program.programId
+    );
+  }
+
+  /**
    * Serialize asset for hashing
    */
   private serializeAsset(asset: Asset): Buffer {
@@ -754,6 +767,20 @@ export class MultisigVaultClient {
       return false;
     }
   }
+
+  /**
+   * Check if an admin nonce has been used
+   */
+  async isAdminNonceUsed(vaultPda: PublicKey, requestId: BN): Promise<boolean> {
+    try {
+      const [noncePda] = this.getAdminNonceAddress(vaultPda, requestId);
+      const nonceAccount = await this.program.account.nonceAccount.fetch(noncePda);
+      return nonceAccount.used;
+    } catch (error) {
+      // Nonce account doesn't exist yet
+      return false;
+    }
+  }
 }
 
 export class MultisigAdminClient extends MultisigVaultClient {
@@ -812,7 +839,7 @@ export class MultisigAdminClient extends MultisigVaultClient {
     expiryDurationSeconds: number = 3600,
   ): Promise<string> {
     const [vaultPda] = this.getVaultAddress(this.vaultSeed);
-    const [noncePda] = this.getNonceAddress(vaultPda, new BN(requestId));
+    const [noncePda] = this.getAdminNonceAddress(vaultPda, new BN(requestId));
     
     const actualPayer = this.provider.wallet.publicKey;
     
@@ -860,7 +887,7 @@ export class MultisigAdminClient extends MultisigVaultClient {
     expiryDurationSeconds: number = 3600,
   ): Promise<string> {
     const [vaultPda] = this.getVaultAddress(this.vaultSeed);
-    const [noncePda] = this.getNonceAddress(vaultPda, new BN(requestId));
+    const [noncePda] = this.getAdminNonceAddress(vaultPda, new BN(requestId));
     
     const actualPayer = this.provider.wallet.publicKey;
     
@@ -956,7 +983,7 @@ export class MultisigAdminClient extends MultisigVaultClient {
     }
     
     const [vaultPda] = this.getVaultAddress(this.vaultSeed);
-    const [noncePda] = this.getNonceAddress(vaultPda, new BN(requestId));
+    const [noncePda] = this.getAdminNonceAddress(vaultPda, new BN(requestId));
     
     const actualPayer = this.provider.wallet.publicKey;
     
@@ -1023,7 +1050,7 @@ export class MultisigAdminClient extends MultisigVaultClient {
     remainingAccounts: any[] = []
   ): Promise<string> {
     const [treasuryPda] = this.getTreasuryAddress(ticket.vault);
-    const [noncePda] = this.getNonceAddress(ticket.vault, ticket.requestId);
+    const [noncePda] = this.getAdminNonceAddress(ticket.vault, ticket.requestId);
     
     const actualPayer = this.provider.wallet.publicKey;
     ticket.user = actualPayer; // Force the user to be the payer (authority) here.
@@ -1105,6 +1132,86 @@ export class MultisigAdminClient extends MultisigVaultClient {
     const ticket = this.createAdminDepositTicket(deposits, requestId, expiryDurationSeconds);
 
     return this.adminDeposit(ticket, ethKeypairs);
+  }
+
+  async adminWithdraw(
+    ticket: WithdrawalTicket,
+    ethKeypairs: EthereumKeypair[],
+    remainingAccounts: any[] = []
+  ): Promise<string> {
+    const [treasuryPda] = this.getTreasuryAddress(ticket.vault);
+    const [noncePda] = this.getAdminNonceAddress(ticket.vault, ticket.requestId);
+    
+    const actualPayer = this.provider.wallet.publicKey;
+
+    // Sign the ticket with all provided signers
+    const signersWithSigs = ethKeypairs.map(kp => this.signWithdrawalTicket(ticket, kp));
+
+    // Convert ticket to program format
+    const ticketArg = {
+      requestId: ticket.requestId,
+      vault: ticket.vault,
+      recipient: ticket.recipient,
+      withdrawals: ticket.withdrawals,
+      expiry: ticket.expiry,
+      networkId: ticket.networkId,
+    };
+
+    // Convert signatures to program format
+    const sigsArg = signersWithSigs.map(s => ({
+      signature: Array.from(s.signature),
+      recoveryId: s.recoveryId,
+    }));
+
+    const tx = await this.program.methods
+      .adminWithdraw(ticketArg, sigsArg)
+      .accounts({
+        vault: ticket.vault,
+        treasury: treasuryPda,
+        recipient: ticket.recipient,
+        nonceAccount: noncePda,
+        payer: actualPayer,
+        systemProgram: SystemProgram.programId,
+        tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
+      } as any)
+      .remainingAccounts(remainingAccounts)
+      .rpc();
+
+    console.log(`✅ Admin Withdrew assets from vault`);
+    console.log(`   Recipient: ${ticket.recipient.toBase58()}`);
+    console.log(`   Request ID: ${ticket.requestId.toString()}`);
+    console.log(`   Valid Signers: ${signersWithSigs.length}`);
+    console.log(`   Transaction: ${tx}`);
+
+    return tx;
+  }
+
+  /**
+   * Convenience method: Withdraw SOL with current timestamp + duration
+   */
+  async createAndExecuteAdminWithdrawal(
+    recipient: PublicKey,
+    amountSol: number,
+    requestId: number,
+    ethKeypairs: EthereumKeypair[],
+    expiryDurationSeconds: number = 3600, // 1 hour default
+  ): Promise<string> {
+    const currentTimestamp = Math.floor(Date.now() / 1000);
+    const expiryTimestamp = currentTimestamp + expiryDurationSeconds;
+
+    const withdrawals: AssetAmount[] = [{
+      asset: { sol: {} },
+      amount: new BN(amountSol * LAMPORTS_PER_SOL),
+    }];
+
+    const ticket = this.createWithdrawalTicket(
+      recipient,
+      withdrawals,
+      requestId,
+      expiryTimestamp,
+    );
+
+    return this.adminWithdraw(ticket, ethKeypairs);
   }
 }
 

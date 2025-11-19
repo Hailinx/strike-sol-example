@@ -15,9 +15,9 @@ pub fn add_asset(
 ) -> Result<()> {
     check_before_admin_update(
         &ctx.accounts.vault,
-        &ctx.accounts.payer,
         &ticket,
         &signers_with_sigs,
+        &ticket.vault,
         ticket.expiry,
         ticket.network_id,
     )?;
@@ -57,9 +57,9 @@ pub fn remove_asset(
 ) -> Result<()> {
     check_before_admin_update(
         &ctx.accounts.vault,
-        &ctx.accounts.payer,
         &ticket,
         &signers_with_sigs,
+        &ticket.vault,
         ticket.expiry,
         ticket.network_id,
     )?;
@@ -95,11 +95,6 @@ pub fn remove_asset(
 }
 
 pub fn create_vault_token_account(ctx: Context<CreateVaultTokenAccount>) -> Result<()> {
-    require!(
-        &ctx.accounts.vault.authority == ctx.accounts.payer.key,
-        ErrorCode::UnauthorizedUser
-    );
-
     msg!(
         "Vault token account created for mint: {}",
         ctx.accounts.mint.key()
@@ -135,9 +130,9 @@ pub fn rotate_validators(
 
     check_before_admin_update(
         &ctx.accounts.vault,
-        &ctx.accounts.payer,
         &ticket,
         &signers_with_sigs,
+        &ticket.vault,
         ticket.expiry,
         ticket.network_id,
     )?;
@@ -161,33 +156,17 @@ pub fn rotate_validators(
     Ok(())
 }
 
-pub fn update_withdraw_limit(
-    ctx: Context<UpdateWithdrawLimit>,
-    withdraw_limit: Option<u64>,
-) -> Result<()> {
-    let vault = &mut ctx.accounts.vault;
-
-    // Only authority is allowed to update withdraw_limit.
-    require!(
-        &vault.authority == ctx.accounts.payer.key,
-        ErrorCode::UnauthorizedUser
-    );
-
-    vault.withdraw_limit = withdraw_limit;
-
-    Ok(())
-}
-
 fn check_before_admin_update(
     vault: &Account<Vault>,
-    payer: &Signer,
     ticket: &dyn Ticket,
     signers_with_sigs: &Vec<SignerWithSignature>,
+    ticket_vault: &Pubkey,
     ticket_expire: i64,
     ticket_network_id: u64,
 ) -> Result<()> {
     let clock = Clock::get()?;
 
+    require!(ticket_vault == &vault.key(), ErrorCode::InvalidVault);
     require!(
         clock.unix_timestamp <= ticket_expire,
         ErrorCode::TicketExpired
@@ -200,7 +179,6 @@ fn check_before_admin_update(
         signers_with_sigs.len() == vault.signers.len(),
         ErrorCode::InsufficientSignatures
     );
-    require!(&vault.authority == payer.key, ErrorCode::UnauthorizedUser);
 
     // admin update required all signers approve.
     let validated_sigs = validate_sigs(ticket, signers_with_sigs, &vault.signers);
@@ -226,7 +204,7 @@ pub struct AddAsset<'info> {
         init,
         payer = payer,
         space = 8 + NonceAccount::INIT_SPACE,
-        seeds = [b"nonce", vault.key().as_ref(), &ticket.request_id.to_le_bytes()],
+        seeds = [b"admin_nonce", vault.key().as_ref(), &ticket.request_id.to_le_bytes()],
         bump
     )]
     pub nonce_account: Account<'info, NonceAccount>,
@@ -251,7 +229,7 @@ pub struct RemoveAsset<'info> {
         init,
         payer = payer,
         space = 8 + NonceAccount::INIT_SPACE,
-        seeds = [b"nonce", vault.key().as_ref(), &ticket.request_id.to_le_bytes()],
+        seeds = [b"admin_nonce", vault.key().as_ref(), &ticket.request_id.to_le_bytes()],
         bump
     )]
     pub nonce_account: Account<'info, NonceAccount>,
@@ -302,25 +280,10 @@ pub struct RotateValidator<'info> {
         init,
         payer = payer,
         space = 8 + NonceAccount::INIT_SPACE,
-        seeds = [b"nonce", vault.key().as_ref(), &ticket.request_id.to_le_bytes()],
+        seeds = [b"admin_nonce", vault.key().as_ref(), &ticket.request_id.to_le_bytes()],
         bump
     )]
     pub nonce_account: Account<'info, NonceAccount>,
-
-    #[account(mut)]
-    pub payer: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-pub struct UpdateWithdrawLimit<'info> {
-    #[account(
-        mut,
-        seeds = [b"vault", vault.vault_seed.as_bytes()],
-        bump = vault.bump
-    )]
-    pub vault: Account<'info, Vault>,
 
     #[account(mut)]
     pub payer: Signer<'info>,

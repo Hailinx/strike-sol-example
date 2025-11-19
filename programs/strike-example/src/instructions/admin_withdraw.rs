@@ -6,8 +6,8 @@ use super::errors::ErrorCode;
 use super::models::*;
 use super::util::validate_sigs;
 
-pub fn withdraw<'info>(
-    ctx: Context<'_, '_, 'info, 'info, Withdraw<'info>>,
+pub fn admin_withdraw<'info>(
+    ctx: Context<'_, '_, 'info, 'info, AdminWithdraw<'info>>,
     ticket: WithdrawalTicket,
     signers_with_sigs: Vec<SignerWithSignature>,
 ) -> Result<()> {
@@ -40,9 +40,9 @@ pub fn withdraw<'info>(
     // Validate the signatures.
     let validated_sigs = validate_sigs(&ticket, &signers_with_sigs, &vault.signers);
 
-    // Normal recipient. Check M of N.
+    // Admin. Check all signers.
     require!(
-        validated_sigs.len() >= vault.m_threshold as usize,
+        validated_sigs.len() == vault.signers.len(),
         ErrorCode::InsufficientValidSignatures
     );
 
@@ -94,7 +94,7 @@ pub fn withdraw<'info>(
                 )?;
 
                 msg!(
-                    "Withdrawal SOL: request_id={}, recipient={}, amount={}, valid_signers={}",
+                    "Admin Withdrawal SOL: request_id={}, recipient={}, amount={}, valid_signers={}",
                     ticket.request_id,
                     ticket.recipient,
                     withdrawal.amount,
@@ -140,7 +140,7 @@ pub fn withdraw<'info>(
                 token::transfer(cpi_ctx, withdrawal.amount)?;
 
                 msg!(
-                    "Withdraw SPL Token: request_id={}, mint={}, recipient={}, amount={}, valid_signers={}",
+                    "Admin Withdraw SPL Token: request_id={}, mint={}, recipient={}, amount={}, valid_signers={}",
                     ticket.request_id,
                     mint,
                     ticket.recipient,
@@ -156,7 +156,7 @@ pub fn withdraw<'info>(
 
 #[derive(Accounts)]
 #[instruction(ticket: WithdrawalTicket)]
-pub struct Withdraw<'info> {
+pub struct AdminWithdraw<'info> {
     #[account(
         mut,
         seeds = [b"vault", vault.vault_seed.as_bytes()],
@@ -180,7 +180,7 @@ pub struct Withdraw<'info> {
         init,
         payer = payer,
         space = 8 + NonceAccount::INIT_SPACE,
-        seeds = [b"nonce", vault.key().as_ref(), &ticket.request_id.to_le_bytes()],
+        seeds = [b"admin_nonce", vault.key().as_ref(), &ticket.request_id.to_le_bytes()],
         bump
     )]
     pub nonce_account: Account<'info, NonceAccount>,

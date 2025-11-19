@@ -202,23 +202,6 @@ describe("Deposit Tests", () => {
       }
     });
 
-    it("should fail when admin tries to use regular deposit", async function() {
-      this.timeout(30000);
-      
-      const adminAsUser = setupUserClient(authority, ANCHOR_PROVIDER_URL, vaultSeed);
-      
-      const deposits: AssetAmount[] = [
-        { asset: { sol: {} }, amount: new BN(1 * LAMPORTS_PER_SOL) },
-      ];
-      
-      try {
-        await adminAsUser.deposit(deposits, Date.now());
-        expect.fail("Should have thrown an error");
-      } catch (error: any) {
-        expect(error.message).to.include("AdminDepositShouldBeSigned");
-      }
-    });
-
     it("should allow deposits with metadata", async function() {
       this.timeout(30000);
       

@@ -591,7 +591,7 @@ describe("Withdraw Tests", () => {
       
       // Try with only M signatures (should fail for admin)
       try {
-        await userClient.createAndExecuteWithdrawal(
+        await adminClient.createAndExecuteAdminWithdrawal(
           authority.publicKey, // Withdrawing to admin
           withdrawAmount,
           requestId,
@@ -613,7 +613,7 @@ describe("Withdraw Tests", () => {
       const adminBalanceBefore = await connection.getBalance(authority.publicKey);
       
       // All 3 signatures required for admin withdrawal
-      await userClient.createAndExecuteWithdrawal(
+      await adminClient.createAndExecuteAdminWithdrawal(
         authority.publicKey,
         withdrawAmount,
         requestId,

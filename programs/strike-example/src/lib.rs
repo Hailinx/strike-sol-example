@@ -44,6 +44,14 @@ pub mod strike_example {
         instructions::withdraw(ctx, ticket, signers_with_sigs)
     }
 
+    pub fn admin_withdraw<'info>(
+        ctx: Context<'_, '_, 'info, 'info, AdminWithdraw<'info>>,
+        ticket: WithdrawalTicket,
+        signers_with_sigs: Vec<SignerWithSignature>,
+    ) -> Result<()> {
+        instructions::admin_withdraw(ctx, ticket, signers_with_sigs)
+    }
+
     pub fn add_asset(
         ctx: Context<AddAsset>,
         ticket: AddAssetTicket,
@@ -70,12 +78,5 @@ pub mod strike_example {
         signers_with_sigs: Vec<SignerWithSignature>,
     ) -> Result<()> {
         instructions::rotate_validators(ctx, ticket, signers_with_sigs)
-    }
-
-    pub fn update_withdraw_limit(
-        ctx: Context<UpdateWithdrawLimit>,
-        withdraw_limit: Option<u64>,
-    ) -> Result<()> {
-        instructions::update_withdraw_limit(ctx, withdraw_limit)
     }
 }

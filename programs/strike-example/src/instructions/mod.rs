@@ -1,6 +1,7 @@
 pub mod accounts;
 pub mod admin;
 pub mod admin_deposit;
+pub mod admin_withdraw;
 pub mod deposit;
 pub mod initialize;
 pub mod withdraw;
@@ -11,6 +12,7 @@ pub mod util;
 pub use accounts::*;
 pub use admin::*;
 pub use admin_deposit::*;
+pub use admin_withdraw::*;
 pub use deposit::*;
 pub use initialize::*;
 pub use models::*;
@@ -35,7 +37,7 @@ pub mod errors {
         DuplicateSigner,
         #[msg("Not enough valid signatures from authorized signers")]
         InsufficientValidSignatures,
-        #[msg("Unauthorized user")]
+        #[msg("Unauthorized user")] // todo remove me after fix the unit test
         UnauthorizedUser,
         #[msg("Insufficient funds in treasury")]
         InsufficientFunds,

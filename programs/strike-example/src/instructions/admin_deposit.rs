@@ -21,16 +21,6 @@ pub fn admin_deposit<'info>(
         vault.network_id == ticket.network_id,
         ErrorCode::InvalidNetwork
     );
-    // Ensure the ticket sender is the authority.
-    require!(
-        ticket.user == ctx.accounts.payer.key(),
-        ErrorCode::UnauthorizedUser
-    );
-    require!(
-        &vault.authority == &ticket.user,
-        ErrorCode::UnauthorizedUser
-    );
-
     require!(
         clock.unix_timestamp <= ticket.expiry,
         ErrorCode::TicketExpired
@@ -88,7 +78,7 @@ pub fn admin_deposit<'info>(
                 )?;
 
                 msg!(
-                    "Deposit SOL: request_id={}, payer={}, amount={}, treasury_balance={}",
+                    "Admin Deposit SOL: request_id={}, payer={}, amount={}, treasury_balance={}",
                     ticket.request_id,
                     ctx.accounts.payer.key(),
                     deposit_item.amount,
@@ -125,7 +115,7 @@ pub fn admin_deposit<'info>(
                 token::transfer(cpi_ctx, deposit_item.amount)?;
 
                 msg!(
-                    "Deposit SPL: request_id={}, mint={}, user={}, amount={}, vault_token_balance={}",
+                    "Admin Deposit SPL: request_id={}, mint={}, user={}, amount={}, vault_token_balance={}",
                     ticket.request_id,
                     mint,
                     user_token.key(),
@@ -160,7 +150,7 @@ pub struct AdminDeposit<'info> {
         init,
         payer = payer,
         space = 8 + NonceAccount::INIT_SPACE,
-        seeds = [b"nonce", vault.key().as_ref(), &ticket.request_id.to_le_bytes()],
+        seeds = [b"admin_nonce", vault.key().as_ref(), &ticket.request_id.to_le_bytes()],
         bump
     )]
     pub nonce_account: Account<'info, NonceAccount>,
