@@ -14,9 +14,10 @@ pub mod strike_example {
         vault_seed: String,
         network_id: u64,
         m_threshold: u8,
+        admin_threshold: u8,
         signers: Vec<[u8; 20]>, // Ethereum addresses (20 bytes)
     ) -> Result<()> {
-        instructions::initialize(ctx, vault_seed, network_id, m_threshold, signers)
+        instructions::initialize(ctx, vault_seed, network_id, m_threshold, admin_threshold, signers)
     }
 
     pub fn deposit<'info>(
@@ -71,7 +72,7 @@ pub mod strike_example {
     }
 
     pub fn remove_asset(
-        ctx: Context<AddAsset>,
+        ctx: Context<RemoveAsset>,
         ticket: RemoveAssetTicket,
         signers_with_sigs: Vec<SignerWithSignature>,
     ) -> Result<()> {

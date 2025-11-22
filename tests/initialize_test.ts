@@ -73,7 +73,7 @@ describe("Initialize Vault Tests", () => {
       const vaultSeed = computeVaultSeed(ethAddresses, mThreshold);
       adminClient = setupAdminClient(authority, ANCHOR_PROVIDER_URL, vaultSeed);
 
-      const result = await adminClient.initialize(mThreshold, ethAddresses);
+      const result = await adminClient.initialize(mThreshold, ethAddresses.length, ethAddresses);
 
       expect(result.signature).to.be.a("string");
       expect(result.vaultAddress).to.be.instanceOf(PublicKey);
@@ -95,7 +95,7 @@ describe("Initialize Vault Tests", () => {
       const vaultSeed = computeVaultSeed(ethAddresses, mThreshold);
       adminClient = setupAdminClient(authority, ANCHOR_PROVIDER_URL, vaultSeed);
 
-      const result = await adminClient.initialize(mThreshold, ethAddresses);
+      const result = await adminClient.initialize(mThreshold, ethAddresses.length, ethAddresses);
 
       expect(result.signature).to.be.a("string");
       
@@ -115,7 +115,7 @@ describe("Initialize Vault Tests", () => {
       const vaultSeed = computeVaultSeed(ethAddresses, mThreshold);
       adminClient = setupAdminClient(authority, ANCHOR_PROVIDER_URL, vaultSeed);
 
-      const result = await adminClient.initialize(mThreshold, ethAddresses);
+      const result = await adminClient.initialize(mThreshold, ethAddresses.length, ethAddresses);
 
       expect(result.signature).to.be.a("string");
       
@@ -137,7 +137,7 @@ describe("Initialize Vault Tests", () => {
       const vaultSeed = computeVaultSeed(ethAddresses, mThreshold);
       adminClient = setupAdminClient(authority, ANCHOR_PROVIDER_URL, vaultSeed);
 
-      const result = await adminClient.initialize(mThreshold, ethAddresses);
+      const result = await adminClient.initialize(mThreshold, ethAddresses.length, ethAddresses);
 
       expect(result.signature).to.be.a("string");
       
@@ -158,11 +158,11 @@ describe("Initialize Vault Tests", () => {
       adminClient = setupAdminClient(authority, ANCHOR_PROVIDER_URL, vaultSeed);
 
       try {
-        await adminClient.initialize(mThreshold, ethAddresses);
+        await adminClient.initialize(mThreshold, ethAddresses.length, ethAddresses);
         expect.fail("Should have thrown an error");
       } catch (error: any) {
         // Error code: InvalidThreshold (0x1771)
-        expect(error.message).to.match(/Invalid m_threshold|InvalidThreshold/i);
+        expect(error.message).to.match(/Invalid threshold|InvalidThreshold/i);
       }
     });
 
@@ -180,11 +180,11 @@ describe("Initialize Vault Tests", () => {
       adminClient = setupAdminClient(authority, ANCHOR_PROVIDER_URL, vaultSeed);
 
       try {
-        await adminClient.initialize(mThreshold, ethAddresses);
+        await adminClient.initialize(mThreshold, ethAddresses.length, ethAddresses);
         expect.fail("Should have thrown an error");
       } catch (error: any) {
         // Error code: InvalidThreshold (0x1771)
-        expect(error.message).to.match(/Invalid m_threshold|InvalidThreshold/i);
+        expect(error.message).to.match(/Invalid threshold|InvalidThreshold/i);
       }
     });
 
@@ -197,7 +197,7 @@ describe("Initialize Vault Tests", () => {
       try {
         const vaultSeed = computeVaultSeed(ethAddresses, mThreshold);
         adminClient = setupAdminClient(authority, ANCHOR_PROVIDER_URL, vaultSeed);
-        await adminClient.initialize(mThreshold, ethAddresses);
+        await adminClient.initialize(mThreshold, ethAddresses.length, ethAddresses);
         expect.fail("Should have thrown an error");
       } catch (error: any) {
         // Error code: InvalidSignersCount (0x1770)
@@ -217,7 +217,7 @@ describe("Initialize Vault Tests", () => {
       adminClient = setupAdminClient(authority, ANCHOR_PROVIDER_URL, vaultSeed);
 
       try {
-        await adminClient.initialize(mThreshold, ethAddresses);
+        await adminClient.initialize(mThreshold, ethAddresses.length, ethAddresses);
         expect.fail("Should have thrown an error");
       } catch (error: any) {
         // Error code: InvalidSignersCount (0x1770)
@@ -239,7 +239,7 @@ describe("Initialize Vault Tests", () => {
       adminClient = setupAdminClient(authority, ANCHOR_PROVIDER_URL, vaultSeed);
 
       try {
-        await adminClient.initialize(mThreshold, ethAddresses);
+        await adminClient.initialize(mThreshold, ethAddresses.length, ethAddresses);
         expect.fail("Should have thrown an error");
       } catch (error: any) {
         // Error code: DuplicateSigner (0x1772)
@@ -257,11 +257,11 @@ describe("Initialize Vault Tests", () => {
       adminClient = setupAdminClient(authority, ANCHOR_PROVIDER_URL, vaultSeed);
 
       // First initialization should succeed
-      await adminClient.initialize(mThreshold, ethAddresses);
+      await adminClient.initialize(mThreshold, ethAddresses.length, ethAddresses);
 
       // Second initialization should fail
       try {
-        await adminClient.initialize(mThreshold, ethAddresses);
+        await adminClient.initialize(mThreshold, ethAddresses.length, ethAddresses);
         expect.fail("Should have thrown an error");
       } catch (error: any) {
         // Anchor error: account already in use
@@ -276,7 +276,7 @@ describe("Initialize Vault Tests", () => {
 
       try {
         adminClient = setupAdminClient(authority, ANCHOR_PROVIDER_URL, longSeed);
-        await adminClient.initialize(mThreshold, ethAddresses);
+        await adminClient.initialize(mThreshold, ethAddresses.length, ethAddresses);
         expect.fail("Should have thrown an error");
       } catch (error: any) {
         expect(error.message).to.include("Vault seed must be between 1 and 32");
@@ -289,7 +289,7 @@ describe("Initialize Vault Tests", () => {
 
       try {
         adminClient = setupAdminClient(authority, ANCHOR_PROVIDER_URL, "");
-        await adminClient.initialize(mThreshold, ethAddresses);
+        await adminClient.initialize(mThreshold, ethAddresses.length, ethAddresses);
         expect.fail("Should have thrown an error");
       } catch (error: any) {
         expect(error.message).to.include("Vault seed must be between 1 and 32");
@@ -311,7 +311,7 @@ describe("Initialize Vault Tests", () => {
       const vaultSeed = computeVaultSeed(ethAddresses, mThreshold);
       adminClient = setupAdminClient(authority, ANCHOR_PROVIDER_URL, vaultSeed);
 
-      const result = await adminClient.initialize(mThreshold, ethAddresses);
+      const result = await adminClient.initialize(mThreshold, ethAddresses.length, ethAddresses);
       const vaultData = await adminClient.getVaultData();
 
       // Verify all fields
@@ -341,7 +341,7 @@ describe("Initialize Vault Tests", () => {
       const vaultSeed = computeVaultSeed(ethAddresses, mThreshold);
       adminClient = setupAdminClient(authority, ANCHOR_PROVIDER_URL, vaultSeed);
 
-      await adminClient.initialize(mThreshold, ethAddresses);
+      await adminClient.initialize(mThreshold, ethAddresses.length, ethAddresses);
 
       // Verify treasury PDA exists
       const [vaultPda] = adminClient.getVaultAddress(vaultSeed);
@@ -365,7 +365,7 @@ describe("Initialize Vault Tests", () => {
       const vaultSeed = computeVaultSeed(ethAddresses, mThreshold);
       adminClient = setupAdminClient(authority, ANCHOR_PROVIDER_URL, vaultSeed);
 
-      await adminClient.initialize(mThreshold, ethAddresses);
+      await adminClient.initialize(mThreshold, ethAddresses.length, ethAddresses);
 
       const balance = await adminClient.getTreasuryBalance();
       const lamports = await connection.getMinimumBalanceForRentExemption(8);
@@ -389,7 +389,7 @@ describe("Initialize Vault Tests", () => {
       const vaultSeed = computeVaultSeed(ethAddresses, mThreshold);
       adminClient = setupAdminClient(authority, ANCHOR_PROVIDER_URL, vaultSeed);
 
-      await adminClient.initialize(mThreshold, ethAddresses);
+      await adminClient.initialize(mThreshold, ethAddresses.length, ethAddresses);
 
       const program = adminClient.program;
       const [vaultPda] = adminClient.getVaultAddress(vaultSeed);
@@ -419,7 +419,7 @@ describe("Initialize Vault Tests", () => {
       const vaultSeed = computeVaultSeed(ethAddresses, mThreshold);
       adminClient = setupAdminClient(authority, ANCHOR_PROVIDER_URL, vaultSeed);
 
-      const result = await adminClient.initialize(mThreshold, ethAddresses);
+      const result = await adminClient.initialize(mThreshold, ethAddresses.length, ethAddresses);
       expect(result.signature).to.be.a("string");
     });
 
@@ -436,7 +436,7 @@ describe("Initialize Vault Tests", () => {
 
       adminClient = setupAdminClient(authority, ANCHOR_PROVIDER_URL, maxSeed);
 
-      const result = await adminClient.initialize(mThreshold, ethAddresses);
+      const result = await adminClient.initialize(mThreshold, ethAddresses.length, ethAddresses);
       expect(result.signature).to.be.a("string");
     });
   });

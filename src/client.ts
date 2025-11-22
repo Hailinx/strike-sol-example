@@ -107,6 +107,7 @@ export interface RotateValidatorTicket {
   vault: PublicKey;
   signers: Uint8Array[]; // Array of 20-byte Ethereum addresses
   mThreshold: number;
+  adminThreshold: number;
   expiry: BN;
   networkId: BN;
 }
@@ -469,6 +470,8 @@ export class MultisigVaultClient {
     
     // M threshold (u8, single byte)
     data.push(Buffer.from([ticket.mThreshold]));
+    // Admin threshold (u8, single byte)
+    data.push(Buffer.from([ticket.adminThreshold]));
     
     // Expiry (i64, little-endian)
     const expiryBuf = Buffer.alloc(8);
@@ -987,6 +990,7 @@ export class MultisigAdminClient extends MultisigVaultClient {
    */
   async initialize(
     mThreshold: number,
+    adminThreshold: number,
     ethAddresses: Uint8Array[] // Array of 20-byte Ethereum addresses
   ): Promise<{ signature: string; vaultAddress: PublicKey }> {
     const authority = this.provider.wallet.publicKey;
@@ -998,7 +1002,7 @@ export class MultisigAdminClient extends MultisigVaultClient {
     const signersArray = ethAddresses.map(addr => Array.from(addr));
 
     const tx = await this.program.methods
-      .initialize(this.vaultSeed, new BN(this.networkId), mThreshold, signersArray)
+      .initialize(this.vaultSeed, new BN(this.networkId), mThreshold, adminThreshold, signersArray)
       .accounts({
         vault: vaultPda,
         treasury: treasuryPda,
@@ -1147,6 +1151,7 @@ export class MultisigAdminClient extends MultisigVaultClient {
   async rotateValidators(
     newSigners: Uint8Array[], // Array of 20-byte Ethereum addresses
     newMThreshold: number,
+    newAdminThreshold: number,
     requestId: number,
     currentEthKeypairs: EthereumKeypair[], // Current validators signing the change
     expiryDurationSeconds: number = 3600,
@@ -1159,6 +1164,11 @@ export class MultisigAdminClient extends MultisigVaultClient {
     if (newMThreshold <= 0 || newMThreshold > newSigners.length) {
       throw new Error(
         `Invalid threshold: ${newMThreshold} (must be 1-${newSigners.length})`
+      );
+    }
+    if (newAdminThreshold <= 0 || newAdminThreshold > newSigners.length) {
+      throw new Error(
+        `Invalid admin threshold: ${newAdminThreshold} (must be 1-${newSigners.length})`
       );
     }
     
@@ -1184,6 +1194,7 @@ export class MultisigAdminClient extends MultisigVaultClient {
       vault: vaultPda,
       signers: newSigners,
       mThreshold: newMThreshold,
+      adminThreshold: newAdminThreshold,
       expiry: new BN(expiryTimestamp),
       networkId: new BN(this.networkId),
     };
@@ -1207,6 +1218,7 @@ export class MultisigAdminClient extends MultisigVaultClient {
       vault: ticket.vault,
       signers: signersArray,
       mThreshold: ticket.mThreshold,
+      adminThreshold: ticket.adminThreshold,
       expiry: ticket.expiry,
       networkId: ticket.networkId,
     };

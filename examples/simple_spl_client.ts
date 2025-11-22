@@ -62,7 +62,7 @@ async function main() {
     console.log(`  Whitelisted Assets: ${vaultData.whitelistedAssets.length}`);
   } catch {
     console.log(`\nInitializing new vault with M=${M}, N=${N}...`);
-    const { vaultAddress } = await client.initialize(M, ethAddresses);
+    const { vaultAddress } = await client.initialize(M, N, ethAddresses);
     console.log(`Vault created: ${vaultAddress.toBase58()}`);
   }
 

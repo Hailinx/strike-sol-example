@@ -51,7 +51,7 @@ pub fn add_asset(
 }
 
 pub fn remove_asset(
-    ctx: Context<AddAsset>,
+    ctx: Context<RemoveAsset>,
     ticket: RemoveAssetTicket,
     signers_with_sigs: Vec<SignerWithSignature>,
 ) -> Result<()> {
@@ -117,6 +117,10 @@ pub fn rotate_validators(
         ticket.m_threshold > 0 && (ticket.m_threshold as usize) <= signers_len,
         ErrorCode::InvalidThreshold
     );
+    require!(
+        ticket.admin_threshold > 0 && (ticket.admin_threshold as usize) <= signers_len,
+        ErrorCode::InvalidThreshold
+    );
 
     // Check for duplicate signers
     for i in 0..signers_len {
@@ -144,13 +148,15 @@ pub fn rotate_validators(
 
     let vault = &mut ctx.accounts.vault;
     vault.m_threshold = ticket.m_threshold;
+    vault.admin_threshold = ticket.admin_threshold;
     vault.signers = ticket.signers;
 
     msg!(
-        "Admin request {:?}: rotate validators: {:?}, m_threshold: {:?}",
+        "Admin request {:?}: rotate validators: {:?}, m_threshold: {:?}, admin_threshold: {:?}",
         ticket.request_id,
         signers_len,
-        ticket.m_threshold
+        ticket.m_threshold,
+        ticket.admin_threshold,
     );
 
     Ok(())
@@ -180,10 +186,10 @@ fn check_before_admin_update(
         ErrorCode::InsufficientSignatures
     );
 
-    // admin update required all signers approve.
+    // admin update required admin_threshold's signers approve.
     let validated_sigs = validate_sigs(ticket, signers_with_sigs, &vault.signers);
     require!(
-        validated_sigs.len() == vault.signers.len(),
+        validated_sigs.len() >= vault.admin_threshold as usize,
         ErrorCode::InsufficientValidSignatures
     );
 

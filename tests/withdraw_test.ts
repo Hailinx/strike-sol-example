@@ -128,7 +128,7 @@ describe("Withdraw Tests", () => {
     adminClient = setupAdminClient(authority, ANCHOR_PROVIDER_URL, vaultSeed);
     userClient = setupUserClient(user, ANCHOR_PROVIDER_URL, vaultSeed);
 
-    const result = await adminClient.initialize(mThreshold, ethAddresses);
+    const result = await adminClient.initialize(mThreshold, ethAddresses.length, ethAddresses);
     vaultPda = result.vaultAddress;
     [treasuryPda] = adminClient.getTreasuryAddress(vaultPda);
     
@@ -1154,6 +1154,7 @@ describe("Withdraw Tests", () => {
       // Initialize the empty vault
       const result = await emptyAdminClient.initialize(
         mThreshold,
+        3,
         [ethKeypair1.address, ethKeypair2.address, ethKeypair3.address]
       );
       

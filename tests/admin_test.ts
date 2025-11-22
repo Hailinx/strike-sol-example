@@ -130,7 +130,7 @@ describe("Admin Functions Tests", () => {
     adminClient = setupAdminClient(authority, ANCHOR_PROVIDER_URL, vaultSeed);
     userClient = setupUserClient(user, ANCHOR_PROVIDER_URL, vaultSeed);
 
-    const result = await adminClient.initialize(mThreshold, ethAddresses);
+    const result = await adminClient.initialize(mThreshold, ethAddresses.length, ethAddresses);
     vaultPda = result.vaultAddress;
     [treasuryPda] = adminClient.getTreasuryAddress(vaultPda);
   });
@@ -402,6 +402,7 @@ describe("Admin Functions Tests", () => {
       await adminClient.rotateValidators(
         newSigners,
         newThreshold,
+        newSigners.length,
         requestId,
         [ethKeypair1, ethKeypair2, ethKeypair3], // Current validators sign
       );
@@ -431,6 +432,7 @@ describe("Admin Functions Tests", () => {
       await adminClient.rotateValidators(
         newSigners,
         newThreshold,
+        newSigners.length,
         requestId,
         [ethKeypair1, ethKeypair2, ethKeypair3],
       );
@@ -456,6 +458,7 @@ describe("Admin Functions Tests", () => {
         await adminClient.rotateValidators(
           newSigners,
           newThreshold,
+          newSigners.length,
           requestId,
           [ethKeypair1, ethKeypair2, ethKeypair3],
         );
@@ -479,13 +482,14 @@ describe("Admin Functions Tests", () => {
         await adminClient.rotateValidators(
           newSigners,
           newThreshold,
+          newSigners.length,
           requestId,
           [ethKeypair1, ethKeypair2, ethKeypair3],
         );
         expect.fail("Should have thrown an error");
       } catch (error: any) {
         // Client-side validation throws before hitting the contract
-        expect(error.message).to.match(/Invalid threshold|Invalid m_threshold/);
+        expect(error.message).to.match(/Invalid threshold|Invalid threshold/);
       }
     });
 
@@ -503,13 +507,14 @@ describe("Admin Functions Tests", () => {
         await adminClient.rotateValidators(
           newSigners,
           newThreshold,
+          newSigners.length,
           requestId,
           [ethKeypair1, ethKeypair2, ethKeypair3],
         );
         expect.fail("Should have thrown an error");
       } catch (error: any) {
         // Client-side validation throws before hitting the contract
-        expect(error.message).to.match(/Invalid threshold|Invalid m_threshold/);
+        expect(error.message).to.match(/Invalid threshold|Invalid threshold/);
       }
     });
 
@@ -524,6 +529,7 @@ describe("Admin Functions Tests", () => {
         await adminClient.rotateValidators(
           newSigners,
           newThreshold,
+          newSigners.length,
           requestId,
           [ethKeypair1, ethKeypair2, ethKeypair3],
         );
@@ -548,6 +554,7 @@ describe("Admin Functions Tests", () => {
         await adminClient.rotateValidators(
           newSigners,
           newThreshold,
+          newSigners.length,
           requestId,
           [ethKeypair1],
         );
@@ -697,6 +704,7 @@ describe("Admin Functions Tests", () => {
       await adminClient.rotateValidators(
         newSigners,
         newThreshold,
+        newSigners.length,
         Date.now(),
         [ethKeypair1, ethKeypair2, ethKeypair3],
       );
@@ -729,6 +737,7 @@ describe("Admin Functions Tests", () => {
       await adminClient.rotateValidators(
         newSigners,
         newThreshold,
+        newSigners.length,
         Date.now(),
         [ethKeypair1, ethKeypair2, ethKeypair3],
       );

@@ -125,7 +125,7 @@ describe("Bulk Withdraw Tests", () => {
     adminClient = setupAdminClient(authority, ANCHOR_PROVIDER_URL, vaultSeed);
     userClient = setupUserClient(user, ANCHOR_PROVIDER_URL, vaultSeed);
 
-    const result = await adminClient.initialize(mThreshold, ethAddresses);
+    const result = await adminClient.initialize(mThreshold, ethAddresses.length, ethAddresses);
     vaultPda = result.vaultAddress;
     [treasuryPda] = adminClient.getTreasuryAddress(vaultPda);
     

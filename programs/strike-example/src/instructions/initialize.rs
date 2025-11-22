@@ -9,6 +9,7 @@ pub fn initialize(
     vault_seed: String,
     network_id: u64,
     m_threshold: u8,
+    admin_threshold: u8,
     signers: Vec<[u8; 20]>, // Ethereum addresses (20 bytes)
 ) -> Result<()> {
     let signers_len = signers.len();
@@ -19,6 +20,10 @@ pub fn initialize(
     );
     require!(
         m_threshold > 0 && (m_threshold as usize) <= signers_len,
+        ErrorCode::InvalidThreshold
+    );
+    require!(
+        admin_threshold > 0 && (admin_threshold as usize) <= signers_len,
         ErrorCode::InvalidThreshold
     );
 
@@ -35,13 +40,15 @@ pub fn initialize(
     vault.vault_seed = vault_seed;
     vault.network_id = network_id;
     vault.m_threshold = m_threshold;
+    vault.admin_threshold = admin_threshold;
     vault.signers = signers;
     vault.bump = ctx.bumps.vault;
     vault.treasury_bump = ctx.bumps.treasury;
 
     msg!(
-        "Vault initialized: m={}, n={}, authority={}",
+        "Vault initialized: m_threshold={}, admin_threshold={}, N={}, authority={}",
         m_threshold,
+        admin_threshold,
         signers_len,
         vault.authority
     );

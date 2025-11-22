@@ -126,6 +126,7 @@ pub struct RotateValidatorTicket {
     pub vault: Pubkey,
     pub signers: Vec<[u8; 20]>,
     pub m_threshold: u8,
+    pub admin_threshold: u8,
     pub expiry: i64,
     pub network_id: u64,
 }
@@ -148,6 +149,7 @@ impl Ticket for RotateValidatorTicket {
             data.push(56u8);
         }
         data.extend_from_slice(&self.m_threshold.to_le_bytes());
+        data.extend_from_slice(&self.admin_threshold.to_le_bytes());
         data.extend_from_slice(&self.expiry.to_le_bytes());
         data.extend_from_slice(&self.network_id.to_le_bytes());
 

@@ -36,7 +36,7 @@ pub mod errors {
         Overflow,
         #[msg("Invalid signers count")]
         InvalidSignersCount,
-        #[msg("Invalid m_threshold")]
+        #[msg("Invalid threshold")]
         InvalidThreshold,
         #[msg("Duplicate signer detected")]
         DuplicateSigner,
