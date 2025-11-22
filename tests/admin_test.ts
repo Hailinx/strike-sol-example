@@ -569,8 +569,6 @@ describe("Admin Functions Tests", () => {
     it("should successfully create vault token account", async function() {
       this.timeout(30000);
       
-      await adminClient.createVaultTokenAccount(testMint);
-      
       // Verify account was created
       const [vaultPda] = adminClient.getVaultAddress(vaultSeed);
       const ata = await getOrCreateAssociatedTokenAccount(
@@ -587,10 +585,7 @@ describe("Admin Functions Tests", () => {
 
     it("should create multiple token accounts for different mints", async function() {
       this.timeout(60000);
-      
-      await adminClient.createVaultTokenAccount(testMint);
-      await adminClient.createVaultTokenAccount(testMint2);
-      
+
       const [vaultPda] = adminClient.getVaultAddress(vaultSeed);
       
       const ata1 = await getOrCreateAssociatedTokenAccount(
@@ -625,9 +620,6 @@ describe("Admin Functions Tests", () => {
         Date.now(),
         [ethKeypair1, ethKeypair2, ethKeypair3],
       );
-      
-      // Create vault token account
-      await adminClient.createVaultTokenAccount(testMint);
       
       // Mint tokens to user
       const userAta = await getOrCreateAssociatedTokenAccount(

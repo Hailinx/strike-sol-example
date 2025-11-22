@@ -79,10 +79,6 @@ pub mod strike_example {
         instructions::remove_asset(ctx, ticket, signers_with_sigs)
     }
 
-    pub fn create_vault_token_account(ctx: Context<CreateVaultTokenAccount>) -> Result<()> {
-        instructions::create_vault_token_account(ctx)
-    }
-
     pub fn rotate_validators(
         ctx: Context<RotateValidator>,
         ticket: RotateValidatorTicket,

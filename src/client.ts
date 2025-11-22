@@ -1114,36 +1114,6 @@ export class MultisigAdminClient extends MultisigVaultClient {
     return tx;
   }
 
-  async createVaultTokenAccount(
-    mint: PublicKey,
-  ) {
-    const [vaultPda] = this.getVaultAddress(this.vaultSeed);
-    const actualPayer = this.provider.wallet.publicKey;
-
-    try {
-      const createVaultTokenAccountTx = await this.program.methods
-        .createVaultTokenAccount()
-        .accounts({
-          vault: vaultPda,
-          mint: mint,
-          payer: actualPayer,
-          systemProgram: anchor.web3.SystemProgram.programId,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
-        } as any)
-        .rpc();
-
-      console.log(`✅ Vault token account created`);
-      console.log(`   Transaction: ${createVaultTokenAccountTx}`);
-    } catch (err: any) {
-      if (err.message?.includes("already in use")) {
-        console.log(`✅ Vault token account already exists`);
-      } else {
-        throw err;
-      }
-    }
-  }
-
   async rotateValidators(
     newSigners: Uint8Array[], // Array of 20-byte Ethereum addresses
     newMThreshold: number,

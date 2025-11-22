@@ -94,14 +94,6 @@ pub fn remove_asset(
     Ok(())
 }
 
-pub fn create_vault_token_account(ctx: Context<CreateVaultTokenAccount>) -> Result<()> {
-    msg!(
-        "Vault token account created for mint: {}",
-        ctx.accounts.mint.key()
-    );
-    Ok(())
-}
-
 pub fn rotate_validators(
     ctx: Context<RotateValidator>,
     ticket: RotateValidatorTicket,
@@ -244,32 +236,6 @@ pub struct RemoveAsset<'info> {
     pub payer: Signer<'info>,
 
     pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-pub struct CreateVaultTokenAccount<'info> {
-    #[account(
-        seeds = [b"vault", vault.vault_seed.as_bytes()],
-        bump = vault.bump
-    )]
-    pub vault: Account<'info, Vault>,
-
-    pub mint: Account<'info, Mint>,
-
-    #[account(
-        init,
-        payer = payer,
-        associated_token::mint = mint,
-        associated_token::authority = vault,
-    )]
-    pub vault_token_account: Account<'info, TokenAccount>,
-
-    #[account(mut)]
-    pub payer: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-    pub token_program: Program<'info, Token>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
 }
 
 #[derive(Accounts)]

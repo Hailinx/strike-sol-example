@@ -648,10 +648,7 @@ describe("Withdraw Tests", () => {
         recipient.publicKey
       );
       console.log(`Recipient token account: ${recipientTokenAccount.address.toBase58()}`);
-      
-      // Create vault token account
-      await adminClient.createVaultTokenAccount(testMint);
-      
+
       vaultTokenAccount = await getOrCreateAssociatedTokenAccount(
         connection,
         authority,

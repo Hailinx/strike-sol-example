@@ -279,10 +279,6 @@ describe("Deposit Tests", () => {
       );
       console.log(`Token whitelisted`);
       
-      // Create vault token account
-      await adminClient.createVaultTokenAccount(testMint);
-      console.log(`Vault token account created`);
-      
       // Get vault token account
       vaultTokenAccount = await getOrCreateAssociatedTokenAccount(
         connection,

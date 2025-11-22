@@ -116,8 +116,6 @@ async function main() {
   console.log(`   User token account: ${userTokenAccount.address.toBase58()}`);
 
   console.log(`\n=== Step 4: Creating Vault Token Account ===`);
-  await client.createVaultTokenAccount(mint);
-
   const vaultTokenAccount = await getOrCreateAssociatedTokenAccount(
     connection,
     authority,

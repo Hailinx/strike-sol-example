@@ -783,10 +783,7 @@ describe("Bulk Withdraw Tests", () => {
           3600
         );
         console.log("SPL Token whitelisted");
-        
-        // Create vault token account
-        await adminClient.createVaultTokenAccount(testMint);
-        
+
         // Get vault token account
         vaultTokenAccount = await getOrCreateAssociatedTokenAccount(
           connection,
