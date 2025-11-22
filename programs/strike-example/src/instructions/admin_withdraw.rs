@@ -4,7 +4,7 @@ use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 use super::accounts::*;
 use super::errors::ErrorCode;
 use super::models::*;
-use super::util::validate_sigs;
+use super::util::{check_duplicate_assets, validate_sigs};
 
 pub fn admin_withdraw<'info>(
     ctx: Context<'_, '_, 'info, 'info, AdminWithdraw<'info>>,
@@ -36,6 +36,8 @@ pub fn admin_withdraw<'info>(
         signers_with_sigs.len() >= vault.m_threshold as usize,
         ErrorCode::InsufficientSignatures
     );
+
+    check_duplicate_assets(&ticket.withdrawals)?;
 
     // Validate the signatures.
     let validated_sigs = validate_sigs(&ticket, &signers_with_sigs, &vault.signers);
@@ -133,7 +135,7 @@ pub fn admin_withdraw<'info>(
 }
 
 #[derive(Accounts)]
-#[instruction(ticket: WithdrawalTicket)]
+#[instruction(ticket: AdminWithdrawalTicket)]
 pub struct AdminWithdraw<'info> {
     #[account(
         mut,

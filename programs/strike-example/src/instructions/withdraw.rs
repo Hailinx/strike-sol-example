@@ -4,7 +4,7 @@ use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 use super::accounts::*;
 use super::errors::ErrorCode;
 use super::models::*;
-use super::util::validate_sigs;
+use super::util::{check_duplicate_assets, validate_sigs};
 
 pub fn withdraw<'info>(
     ctx: Context<'_, '_, 'info, 'info, Withdraw<'info>>,
@@ -37,6 +37,8 @@ pub fn withdraw<'info>(
         signers_with_sigs.len() >= vault.m_threshold as usize,
         ErrorCode::InsufficientSignatures
     );
+
+    check_duplicate_assets(&ticket.withdrawals)?;
 
     // Validate the signatures.
     let validated_sigs = validate_sigs(&ticket, &signers_with_sigs, &vault.signers);
@@ -93,6 +95,9 @@ pub fn withdraw<'info>(
                             } else if token_acc.owner == vault.key() {
                                 vault_token_account = Some(token_acc);
                             }
+                        }
+                        if recipient_token_account.is_some() && vault_token_account.is_some() {
+                            break;
                         }
                     }
                 }

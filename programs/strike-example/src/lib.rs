@@ -45,6 +45,15 @@ pub mod strike_example {
         instructions::withdraw(ctx, ticket, signers_with_sigs, metadata)
     }
 
+    pub fn bulk_withdraw<'info>(
+        ctx: Context<'_, '_, 'info, 'info, BulkWithdraw<'info>>,
+        bulk_ticket: BulkWithdrawalTicket,
+        signers_with_sigs: Vec<SignerWithSignature>,
+        metadata: Option<String>,
+    ) -> Result<()> {
+        instructions::bulk_withdraw(ctx, bulk_ticket, signers_with_sigs, metadata)
+    }
+
     pub fn admin_withdraw<'info>(
         ctx: Context<'_, '_, 'info, 'info, AdminWithdraw<'info>>,
         ticket: AdminWithdrawalTicket,

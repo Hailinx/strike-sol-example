@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use solana_program::keccak;
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, Debug, InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, Hash, Debug, InitSpace)]
 pub enum Asset {
     Sol,
     SplToken { mint: Pubkey },
@@ -252,6 +252,29 @@ impl Ticket for AdminWithdrawalTicket {
         }
         data.extend_from_slice(&self.expiry.to_le_bytes());
         data.extend_from_slice(&self.network_id.to_le_bytes());
+
+        let hash_result = keccak::hash(&data);
+        hash_result.to_bytes()
+    }
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct BulkWithdrawalTicket {
+    pub tickets: Vec<WithdrawalTicket>,
+}
+
+impl Ticket for BulkWithdrawalTicket {
+    fn separator(&self) -> &'static str {
+        "strike-protocol-v1-BulkWithdrawal"
+    }
+
+    fn hash(&self) -> [u8; 32] {
+        let mut data = Vec::new();
+        data.extend_from_slice(self.separator().as_bytes());
+
+        for ticket in self.tickets.iter() {
+            data.extend_from_slice(&ticket.hash());
+        }
 
         let hash_result = keccak::hash(&data);
         hash_result.to_bytes()

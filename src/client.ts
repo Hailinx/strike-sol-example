@@ -34,6 +34,7 @@ export const ANCHOR_PROVIDER_URL = ENV.ANCHOR_PROVIDER_URL || "https://api.devne
 export const PROGRAM_ID = ENV.PROGRAM_ID;
 
 const DOMAIN_SEPARATOR_WITHDRAWAL = "strike-protocol-v1-Withdrawal";
+const DOMAIN_SEPARATOR_BULK_WITHDRAWAL = "strike-protocol-v1-BulkWithdrawal"
 const DOMAIN_SEPARATOR_ADMIN_WITHDRAWAL = "strike-protocol-v1-AdminWithdrawal";
 const DOMAIN_SEPARATOR_ADMIN_DEPOSIT = "strike-protocol-v1-AdminDeposit";
 const DOMAIN_SEPARATOR_ADD_ASSET = "strike-protocol-v1-AddAsset";
@@ -70,6 +71,10 @@ export interface WithdrawalTicket {
   withdrawals: AssetAmount[];
   expiry: BN;
   networkId: BN;
+}
+
+export interface BulkWithdrawalTicket {
+  tickets: WithdrawalTicket[];
 }
 
 export interface AdminDepositTicket {
@@ -303,6 +308,25 @@ export class MultisigVaultClient {
     return keccak256(combined);
   }
 
+  createBulkWithdrawalTicketHash(bulkTicket: BulkWithdrawalTicket): Uint8Array {
+    const data: Buffer[] = [];
+    
+    // Domain separator
+    data.push(Buffer.from(DOMAIN_SEPARATOR_BULK_WITHDRAWAL, "utf8"));
+    
+    // Hash each individual ticket and concatenate
+    for (const ticket of bulkTicket.tickets) {
+      const ticketHash = this.createWithdrawalTicketHash(ticket);
+      data.push(Buffer.from(ticketHash));
+    }
+    
+    // Concatenate all data
+    const combined = Buffer.concat(data);
+    
+    // Hash using keccak256 (Ethereum compatible)
+    return keccak256(combined);
+  }
+
   /**
    * Create a admin deposit ticket hash for signing (keccak256)
    */
@@ -468,6 +492,26 @@ export class MultisigVaultClient {
    */
   signWithdrawalTicket(ticket: WithdrawalTicket, ethKeypair: EthereumKeypair, admin?: boolean): SignerWithSignature {
     const messageHash = this.createWithdrawalTicketHash(ticket, admin);
+    
+    // Sign with secp256k1
+    const sig = secp256k1.sign(messageHash, ethKeypair.privateKey);
+    
+    // Extract r, s, and recovery ID
+    const signature = sig.toCompactRawBytes(); // 64 bytes (r + s)
+    const recoveryId = sig.recovery!; // 0 or 1
+    
+    return {
+      ethAddress: ethKeypair.address,
+      signature,
+      recoveryId,
+    };
+  }
+
+  signBulkWithdrawalTicket(
+    bulkTicket: BulkWithdrawalTicket, 
+    ethKeypair: EthereumKeypair
+  ): SignerWithSignature {
+    const messageHash = this.createBulkWithdrawalTicketHash(bulkTicket);
     
     // Sign with secp256k1
     const sig = secp256k1.sign(messageHash, ethKeypair.privateKey);
@@ -714,6 +758,145 @@ export class MultisigVaultClient {
     );
 
     return this.withdraw(ticket, ethKeypairs);
+  }
+
+  createBulkWithdrawalTicket(
+    withdrawals: Array<{
+      recipient: PublicKey;
+      withdrawals: AssetAmount[];
+      requestId: number;
+      expiryTimestamp: number;
+    }>
+  ): BulkWithdrawalTicket {
+    const tickets = withdrawals.map(w => 
+      this.createWithdrawalTicket(
+        w.recipient,
+        w.withdrawals,
+        w.requestId,
+        w.expiryTimestamp
+      )
+    );
+
+    return { tickets };
+  }
+
+  /**
+   * Execute bulk withdrawal with multisig approval
+   */
+  async bulkWithdraw(
+    bulkTicket: BulkWithdrawalTicket,
+    ethKeypairs: EthereumKeypair[],
+    remainingAccounts: any[] = [],
+    metadata?: string,
+  ): Promise<string> {
+    if (bulkTicket.tickets.length === 0) {
+      throw new Error("No withdrawal tickets provided");
+    }
+
+    const [vaultPda] = this.getVaultAddress(this.vaultSeed);
+    const [treasuryPda] = this.getTreasuryAddress(vaultPda);
+    const actualPayer = this.provider.wallet.publicKey;
+
+    // Sign the bulk ticket with all provided signers
+    const signersWithSigs = ethKeypairs.map(kp => 
+      this.signBulkWithdrawalTicket(bulkTicket, kp)
+    );
+
+    // Build remaining accounts array:
+    // 1. First N accounts are nonce accounts (one per ticket)
+    // 2. Remaining accounts are recipients and token accounts
+    const nonceAccounts: any[] = [];
+    
+    for (const ticket of bulkTicket.tickets) {
+      const [noncePda] = this.getNonceAddress(ticket.vault, ticket.requestId);
+      nonceAccounts.push({
+        pubkey: noncePda,
+        isWritable: true,
+        isSigner: false,
+      });
+    }
+
+    // Combine nonce accounts with other remaining accounts
+    const allRemainingAccounts = [...nonceAccounts, ...remainingAccounts];
+
+    // Convert bulk ticket to program format
+    const bulkTicketArg = {
+      tickets: bulkTicket.tickets.map(ticket => ({
+        requestId: ticket.requestId,
+        vault: ticket.vault,
+        recipient: ticket.recipient,
+        withdrawals: ticket.withdrawals,
+        expiry: ticket.expiry,
+        networkId: ticket.networkId,
+      }))
+    };
+
+    // Convert signatures to program format
+    const sigsArg = signersWithSigs.map(s => ({
+      signature: Array.from(s.signature),
+      recoveryId: s.recoveryId,
+    }));
+
+    const tx = await this.program.methods
+      .bulkWithdraw(bulkTicketArg, sigsArg, metadata || null)
+      .accounts({
+        vault: vaultPda,
+        treasury: treasuryPda,
+        payer: actualPayer,
+        systemProgram: SystemProgram.programId,
+        tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
+      } as any)
+      .remainingAccounts(allRemainingAccounts)
+      .rpc();
+
+    console.log(`✅ Bulk withdrawal completed`);
+    console.log(`   Number of tickets: ${bulkTicket.tickets.length}`);
+    console.log(`   Valid Signers: ${signersWithSigs.length}`);
+    console.log(`   Transaction: ${tx}`);
+
+    return tx;
+  }
+
+  /**
+   * Convenience method: Bulk withdraw SOL with current timestamp + duration
+   */
+  async createAndExecuteBulkWithdrawal(
+    withdrawalRequests: Array<{
+      recipient: PublicKey;
+      amountSol: number;
+      requestId: number;
+    }>,
+    ethKeypairs: EthereumKeypair[],
+    expiryDurationSeconds: number = 3600,
+  ): Promise<string> {
+    const currentTimestamp = Math.floor(Date.now() / 1000);
+    const expiryTimestamp = currentTimestamp + expiryDurationSeconds;
+
+    // Convert to withdrawal ticket format
+    const withdrawals = withdrawalRequests.map(req => ({
+      recipient: req.recipient,
+      withdrawals: [{
+        asset: { sol: {} } as const,
+        amount: new BN(req.amountSol * anchor.web3.LAMPORTS_PER_SOL),
+      }],
+      requestId: req.requestId,
+      expiryTimestamp,
+    }));
+
+    const bulkTicket = this.createBulkWithdrawalTicket(withdrawals);
+
+    // Build remaining accounts for recipients with dedup.
+    const recipientAccounts = Array.from(
+      new Map(
+        withdrawalRequests.map(req => [req.recipient.toString(), {
+          pubkey: req.recipient,
+          isWritable: true,
+          isSigner: false,
+        }])
+      ).values()
+    );
+
+    return this.bulkWithdraw(bulkTicket, ethKeypairs, recipientAccounts);
   }
 
   /**

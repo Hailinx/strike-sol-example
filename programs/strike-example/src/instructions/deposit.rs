@@ -85,7 +85,7 @@ pub fn deposit<'info>(
                     mint,
                     user_token.key(),
                     deposit_item.amount,
-                    vault_token.to_account_info().lamports(),
+                    vault_token.amount,
                     metadata,
                 );
             }

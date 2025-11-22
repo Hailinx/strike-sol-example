@@ -5,7 +5,16 @@ use solana_program::keccak;
 use solana_program::secp256k1_recover::secp256k1_recover;
 
 use super::errors::ErrorCode;
+use super::models::*;
 use super::models::{SignerWithSignature, Ticket};
+
+pub fn check_duplicate_assets(list: &[AssetAmount]) -> Result<()> {
+    let mut seen: HashSet<&Asset> = HashSet::new();
+    for aa in list {
+        require!(seen.insert(&aa.asset), ErrorCode::DuplicateAsset);
+    }
+    Ok(())
+}
 
 pub fn validate_sigs(
     ticket: &dyn Ticket,

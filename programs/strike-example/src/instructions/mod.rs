@@ -2,6 +2,7 @@ pub mod accounts;
 pub mod admin;
 pub mod admin_deposit;
 pub mod admin_withdraw;
+pub mod bulk_withdraw;
 pub mod deposit;
 pub mod initialize;
 pub mod withdraw;
@@ -13,6 +14,7 @@ pub use accounts::*;
 pub use admin::*;
 pub use admin_deposit::*;
 pub use admin_withdraw::*;
+pub use bulk_withdraw::*;
 pub use deposit::*;
 pub use initialize::*;
 pub use models::*;
@@ -22,6 +24,7 @@ pub mod constant {
     pub const CURRENT_VERSION: u8 = 1;
     pub const MAX_SIGNERS: usize = 10; // N
     pub const MAX_ASSETS: usize = 20;
+    pub const MAX_BULK_TICKETS: usize = 4;
 }
 
 pub mod errors {
@@ -29,12 +32,16 @@ pub mod errors {
 
     #[error_code]
     pub enum ErrorCode {
+        #[msg("Overflow")]
+        Overflow,
         #[msg("Invalid signers count")]
         InvalidSignersCount,
         #[msg("Invalid m_threshold")]
         InvalidThreshold,
         #[msg("Duplicate signer detected")]
         DuplicateSigner,
+        #[msg("Duplicate asset")]
+        DuplicateAsset,
         #[msg("Not enough valid signatures from authorized signers")]
         InsufficientValidSignatures,
         #[msg("Insufficient funds in treasury")]
@@ -67,5 +74,15 @@ pub mod errors {
         NoWithdrawalsProvided,
         #[msg("Token account not found")]
         TokenAccountNotFound,
+        #[msg("Unexpected token account found")]
+        UnexpectedTokenAccounts,
+        #[msg("Insufficient remaining accounts")]
+        InsufficientAccounts,
+        #[msg("Invalid nonce account")]
+        InvalidNonceAccount,
+        #[msg("Duplicate request id")]
+        DuplicateRequestId,
+        #[msg("Too many tickets")]
+        TooManyTickets,
     }
 }

@@ -247,15 +247,13 @@ describe("Withdraw Tests", () => {
         expiry: new BN(expiryTimestamp),
         networkId: new BN(102), // DEVNET
       };
-      
-      const recipientBalanceBefore = await connection.getBalance(recipient.publicKey);
-      
-      await userClient.withdraw(ticket, [ethKeypair1, ethKeypair2]);
-      
-      const recipientBalanceAfter = await connection.getBalance(recipient.publicKey);
-      const received = (recipientBalanceAfter - recipientBalanceBefore) / LAMPORTS_PER_SOL;
-      
-      expect(received).to.be.closeTo(0.3, 0.001);
+
+      try {
+        await userClient.withdraw(ticket, [ethKeypair1, ethKeypair2]);
+        expect.fail("Should have thrown an error");
+      } catch (error: any) {
+        expectErrorMessage(error, 'DuplicateAsset.');
+      }
     });
   });
 
@@ -1133,40 +1131,6 @@ describe("Withdraw Tests", () => {
       
       console.log(`      Transaction cost: ${txCost.toFixed(6)} SOL`);
       expect(txCost).to.be.lessThan(0.01); // Should be under 0.01 SOL
-    });
-
-    it("should handle maximum withdrawal array size", async function() {
-      this.timeout(30000);
-      
-      // Create multiple small withdrawals in one transaction
-      const withdrawals: AssetAmount[] = [];
-      for (let i = 0; i < 5; i++) {
-        withdrawals.push({
-          asset: { sol: {} },
-          amount: new BN(0.01 * LAMPORTS_PER_SOL),
-        });
-      }
-      
-      const requestId = getUniqueRequestId();
-      const expiryTimestamp = Math.floor(Date.now() / 1000) + 3600;
-      
-      const ticket: WithdrawalTicket = {
-        requestId: new BN(requestId),
-        vault: vaultPda,
-        recipient: recipient.publicKey,
-        withdrawals,
-        expiry: new BN(expiryTimestamp),
-        networkId: new BN(102),
-      };
-      
-      const recipientBalanceBefore = await connection.getBalance(recipient.publicKey);
-      
-      await userClient.withdraw(ticket, [ethKeypair1, ethKeypair2]);
-      
-      const recipientBalanceAfter = await connection.getBalance(recipient.publicKey);
-      const received = (recipientBalanceAfter - recipientBalanceBefore) / LAMPORTS_PER_SOL;
-      
-      expect(received).to.be.closeTo(0.05, 0.001);
     });
   });
 
