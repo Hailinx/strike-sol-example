@@ -80,7 +80,6 @@ export interface BulkWithdrawalTicket {
 export interface AdminDepositTicket {
   requestId: BN;
   vault: PublicKey;
-  user: PublicKey;
   deposits: AssetAmount[];
   expiry: BN;
   networkId: BN;
@@ -344,9 +343,6 @@ export class MultisigVaultClient {
     
     // Vault pubkey (32 bytes)
     data.push(ticket.vault.toBuffer());
-    
-    // User pubkey (32 bytes)
-    data.push(ticket.user.toBuffer());
     
     // Deposits
     for (const deposit of ticket.deposits) {
@@ -1254,7 +1250,6 @@ export class MultisigAdminClient extends MultisigVaultClient {
     const [noncePda] = this.getAdminNonceAddress(ticket.vault, ticket.requestId);
     
     const actualPayer = this.provider.wallet.publicKey;
-    ticket.user = actualPayer; // Force the user to be the payer (authority) here.
 
     // Sign the ticket with all provided signers
     const signersWithSigs = ethKeypairs.map(kp => this.signAdminDepositTicket(ticket, kp));
@@ -1263,7 +1258,6 @@ export class MultisigAdminClient extends MultisigVaultClient {
     const ticketArg = {
       requestId: ticket.requestId,
       vault: ticket.vault,
-      user: ticket.user,
       deposits: ticket.deposits,
       expiry: ticket.expiry,
       networkId: ticket.networkId,
@@ -1289,7 +1283,6 @@ export class MultisigAdminClient extends MultisigVaultClient {
       .rpc();
 
     console.log(`✅ Withdrew assets from vault`);
-    console.log(`   Sender: ${ticket.user.toBase58()}`);
     console.log(`   Request ID: ${ticket.requestId.toString()}`);
     console.log(`   Valid Signers: ${signersWithSigs.length}`);
     console.log(`   Transaction: ${tx}`);
@@ -1310,7 +1303,6 @@ export class MultisigAdminClient extends MultisigVaultClient {
     return {
       requestId: new BN(requestId),
       vault: vaultPda,
-      user: this.provider.wallet.publicKey,
       deposits,
       expiry: new BN(expiryTimestamp),
       networkId: new BN(this.networkId),

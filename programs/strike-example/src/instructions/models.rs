@@ -162,7 +162,6 @@ impl Ticket for RotateValidatorTicket {
 pub struct AdminDepositTicket {
     pub request_id: u64,
     pub vault: Pubkey,
-    pub user: Pubkey,
     pub deposits: Vec<AssetAmount>,
     pub expiry: i64,     // Unix timestamp
     pub network_id: u64, // Solana mainnet=101, devnet=102, testnet=103
@@ -180,7 +179,6 @@ impl Ticket for AdminDepositTicket {
         // Ticket fields
         data.extend_from_slice(&self.request_id.to_le_bytes());
         data.extend_from_slice(&self.vault.to_bytes());
-        data.extend_from_slice(&self.user.to_bytes());
         for asset_amount in self.deposits.iter() {
             asset_amount.add_to_data(&mut data);
         }
