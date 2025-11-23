@@ -317,7 +317,7 @@ pub fn bulk_withdraw<'info>(
                     vault_token.reload()?;
 
                     msg!(
-                        "Bulk Withdraw SPL Token [ticket {}, withdrawal {}]: request_id={}, mint={}, recipient={}, amount={}, valid_signers={}",
+                        "Bulk Withdraw SPL Token [ticket {}, withdrawal {}]: request_id={}, mint={}, recipient={}, amount={}, valid_signers={}, metadata={:?}",
                         transfer_idx,
                         withdrawal_idx,
                         ticket.request_id,
@@ -325,6 +325,7 @@ pub fn bulk_withdraw<'info>(
                         ticket.recipient,
                         withdrawal.amount,
                         validated_sigs.len(),
+                        metadata,
                     );
                 }
             }

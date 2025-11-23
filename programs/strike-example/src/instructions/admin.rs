@@ -172,7 +172,7 @@ fn check_before_admin_update(
         ErrorCode::InvalidNetwork
     );
     require!(
-        signers_with_sigs.len() == vault.signers.len(),
+        signers_with_sigs.len() >= vault.admin_threshold as usize,
         ErrorCode::InsufficientSignatures
     );
 
